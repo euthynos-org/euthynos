@@ -1,0 +1,54 @@
+{
+  "name": "euthynos",
+  "version": "0.1.0",
+  "description": "Euthynos — deterministic repository intelligence for AI coding agents (MCP server): exact source spans, call graphs, clone detection, honest evidence boundaries.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Tonil Kumar",
+  "bin": {
+    "euthynos": "dist/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/euthynos-org/euthynos.git"
+  },
+  "homepage": "https://euthynos.dev",
+  "bugs": {
+    "url": "https://github.com/euthynos-org/euthynos/issues"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs && node scripts/stamp-build.mjs",
+    "prepublishOnly": "npm run build",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "scan:self": "tsx src/cli.ts scan ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1",
+    "tree-sitter-wasms": "^0.1.13",
+    "typescript": "^5.7.0",
+    "web-tree-sitter": "^0.25.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "architecture",
+    "code-quality",
+    "ast",
+    "technical-debt",
+    "module-depth",
+    "github-action"
+  ]
+}

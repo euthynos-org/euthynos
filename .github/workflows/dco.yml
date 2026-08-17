@@ -1,0 +1,76 @@
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# `pull_request`, deliberately not `pull_request_target`: this check reads the
+# PR's commit metadata and nothing else, so it needs no write token and no
+# secrets, and there is no reason to run it in the privileged base-repo context.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco-check:
+    name: dco-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Signed-off-by on every commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          fail=0
+
+          # Commit messages are base64-encoded so that a message containing
+          # tabs or newlines still occupies exactly one TSV line. Merge commits
+          # (two or more parents) introduce no authored content, and are skipped
+          # for the same reason the DCO app skips them.
+          gh api --paginate "repos/$REPO/pulls/$PR/commits" \
+            --jq '.[]
+                  | select((.parents | length) < 2)
+                  | [ .sha,
+                      .commit.author.name,
+                      .commit.author.email,
+                      (.commit.message | @base64) ]
+                  | @tsv' > commits.tsv
+
+          while IFS=$'\t' read -r sha name email b64; do
+            msg=$(printf '%s' "$b64" | base64 -d)
+
+            # Every Signed-off-by identity in the message, trimmed and folded to
+            # lower case. Folding happens here rather than via `grep -i -F`,
+            # which aborts outright on some GNU grep builds when those two flags
+            # are combined — a failure that would reject every pull request.
+            signers=$(
+              printf '%s\n' "$msg" |
+                sed -n 's/^Signed-off-by:[[:space:]]*//Ip' |
+                sed 's/[[:space:]]*$//' |
+                tr '[:upper:]' '[:lower:]'
+            )
+
+            if [ -z "$signers" ]; then
+              echo "::error::${sha:0:8} by ${name} <${email}> has no Signed-off-by line"
+              fail=1
+              continue
+            fi
+
+            want=$(printf '%s <%s>' "$name" "$email" | tr '[:upper:]' '[:lower:]')
+
+            if ! printf '%s\n' "$signers" | grep -qxF "$want"; then
+              echo "::error::${sha:0:8} is signed off, but not by its author ${name} <${email}>"
+              fail=1
+            fi
+          done < commits.tsv
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Fix the whole branch with: git rebase --signoff origin/${BASE} && git push --force-with-lease"
+            exit 1
+          fi
+
+          echo "Every commit carries a Signed-off-by line matching its author."

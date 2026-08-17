@@ -1,0 +1,13 @@
+# Frozen research artifacts are published BYTE-IDENTICAL to the originals, and
+# PROVENANCE.md invites you to verify their hashes. Line-ending conversion would
+# silently break that: Git for Windows defaults to core.autocrlf=true, which
+# would hand a cloner CRLF copies whose sha256 no longer matches the frozen
+# record. These files are therefore never converted, on any platform.
+research/** -text
+
+# Binary assets: never converted, never diffed as text.
+*.gif  binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.wasm binary

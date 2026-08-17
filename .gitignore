@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+contexthub-report.json
+contexthub-report.md
+.contexthub/
+dashboard-preview.html
+bench-results/
+.euthynos/
+
+# Internal — not part of the engine release
+landing-page/
+scripts/experiments/

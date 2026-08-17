@@ -1,0 +1,24 @@
+# Dogfood: run the Euthynos action against this repo on every PR.
+
+name: Euthynos scan
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history so the locality metric (git co-change window)
+          # has data; the default depth of 1 would leave it empty.
+          fetch-depth: 0
+
+      - name: Euthynos scan scan
+        uses: ./action

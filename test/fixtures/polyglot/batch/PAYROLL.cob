@@ -1,0 +1,12 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PAYROLL.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-NET   PIC 9(7).
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           PERFORM CALC-NET.
+           GOBACK.
+       CALC-NET.
+           MOVE 1000 TO WS-NET.
+           DISPLAY WS-NET.

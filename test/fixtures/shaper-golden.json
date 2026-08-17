@@ -1,0 +1,245 @@
+{
+  "note": "Golden set for the deterministic query shaper (plan \u00a741). Every intent rule must have at least one case here; adding a rule without a case is a test failure. Cases marked expectTarget assert target resolution against the fixture repo in test/shaper-golden.test.ts.",
+  "cases": [
+    {
+      "q": "Who calls authMiddleware?",
+      "intent": "callers",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "What calls verifyToken",
+      "intent": "callers",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Which functions call createSession?",
+      "intent": "callers",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "What is authMiddleware called by?",
+      "intent": "callers",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "Show me the callers of createSession",
+      "intent": "callers",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Who uses verifyToken?",
+      "intent": "callers",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "What does authMiddleware call?",
+      "intent": "callees",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "What are the callees of createSession?",
+      "intent": "callees",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Where is verifyToken used?",
+      "intent": "references",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Find all references to createSession",
+      "intent": "references",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Show usages of authMiddleware",
+      "intent": "references",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "What depends on the auth module?",
+      "intent": "dependents"
+    },
+    {
+      "q": "What is imported by session.ts?",
+      "intent": "dependents"
+    },
+    {
+      "q": "What does the api module depend on?",
+      "intent": "dependencies"
+    },
+    {
+      "q": "What breaks if I change verifyToken?",
+      "intent": "blast_radius",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "What is the blast radius of createSession?",
+      "intent": "blast_radius",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Is it safe to remove authMiddleware?",
+      "intent": "blast_radius",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "What happens if I delete verifyToken?",
+      "intent": "blast_radius",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "What is affected by changing createSession?",
+      "intent": "blast_radius",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Find similar authentication logic",
+      "intent": "similar_logic"
+    },
+    {
+      "q": "Are there duplicates of verifyToken?",
+      "intent": "similar_logic",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Is there any duplicated logic in this repo?",
+      "intent": "similar_logic"
+    },
+    {
+      "q": "What tests cover createSession?",
+      "intent": "tests",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Which tests exercise authMiddleware?",
+      "intent": "tests",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "Tests for verifyToken",
+      "intent": "tests",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Are there any architecture violations?",
+      "intent": "architecture"
+    },
+    {
+      "q": "Show me the layering boundaries",
+      "intent": "architecture"
+    },
+    {
+      "q": "Is there circular coupling here?",
+      "intent": "architecture"
+    },
+    {
+      "q": "What changed recently?",
+      "intent": "history"
+    },
+    {
+      "q": "Who wrote verifyToken?",
+      "intent": "history"
+    },
+    {
+      "q": "What was last modified in auth?",
+      "intent": "history"
+    },
+    {
+      "q": "Show me the path from authMiddleware to createSession",
+      "intent": "find_path"
+    },
+    {
+      "q": "Show me functions that validate tokens before creating a session",
+      "intent": "find_path",
+      "relation": "before"
+    },
+    {
+      "q": "Show me the code for verifyToken",
+      "intent": "source",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Print the source of createSession",
+      "intent": "source",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Read the function authMiddleware",
+      "intent": "source",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "What does verifyToken do?",
+      "intent": "explain",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Explain authMiddleware",
+      "intent": "explain",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "How does createSession work?",
+      "intent": "explain",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "What is the purpose of verifyToken?",
+      "intent": "explain",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Give me an overview of this repository",
+      "intent": "overview"
+    },
+    {
+      "q": "Help me orient in this project",
+      "intent": "overview"
+    },
+    {
+      "q": "What is this repo?",
+      "intent": "overview"
+    },
+    {
+      "q": "Get me up to speed",
+      "intent": "overview"
+    },
+    {
+      "q": "Where is verifyToken?",
+      "intent": "locate",
+      "expectTarget": "verifyToken"
+    },
+    {
+      "q": "Where is JWT authentication implemented?",
+      "intent": "locate"
+    },
+    {
+      "q": "Find createSession",
+      "intent": "locate",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "Which file defines authMiddleware?",
+      "intent": "locate",
+      "expectTarget": "authMiddleware"
+    },
+    {
+      "q": "Where does session handling live?",
+      "intent": "locate"
+    },
+    {
+      "q": "In which module is createSession declared?",
+      "intent": "locate",
+      "expectTarget": "createSession"
+    },
+    {
+      "q": "banana banana banana",
+      "intent": null
+    },
+    {
+      "q": "hello",
+      "intent": null
+    }
+  ]
+}

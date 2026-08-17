@@ -1,0 +1,14 @@
+export { scan } from './scan.js';
+export type { ScanOptions } from './scan.js';
+export { renderTerminal } from './report/terminal.js';
+export { renderMarkdown } from './report/markdown.js';
+export { handleMessage, startMcpServer } from './mcp/server.js';
+export { TOOLS, callTool } from './mcp/tools.js';
+export { analyzeAuthors, parseAuthorLog } from './git/authors.js';
+export { confirmFindings } from './ai/confirm.js';
+export { contaminationScore } from './metrics/contamination.js';
+export { buildKnowledgeGraph, modId, fileId, fnId } from './graph/knowledge.js';
+export { buildRepoGraph, serializeGraph } from './graph/repo.js';
+export { findFunction, callersOf, calleesOf, impactOf, pathBetween } from './graph/query.js';
+export { knowledgeRisk, inferOwner } from './metrics/ownership.js';
+export * from './types.js';
