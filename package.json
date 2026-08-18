@@ -1,6 +1,6 @@
 {
   "name": "euthynos",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Euthynos — deterministic repository intelligence for AI coding agents (MCP server): exact source spans, call graphs, clone detection, honest evidence boundaries.",
   "type": "module",
   "license": "Apache-2.0",
@@ -44,11 +44,21 @@
     "vitest": "^3.0.0"
   },
   "keywords": [
-    "architecture",
-    "code-quality",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "claude",
+    "claude-code",
+    "cursor",
+    "ai-agent",
+    "coding-agent",
+    "code-intelligence",
+    "call-graph",
+    "dependency-graph",
+    "static-analysis",
     "ast",
-    "technical-debt",
-    "module-depth",
-    "github-action"
+    "code-quality",
+    "architecture",
+    "technical-debt"
   ]
 }

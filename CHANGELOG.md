@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.1.0 — release candidate (unreleased)
+## 0.1.1 — 2026-08-18
+
+Packaging only. No engine change: `dist/` is byte-identical in behaviour to
+0.1.0, and the test suite, tool count and tool schemas are unchanged.
+
+- **npm keywords rewritten.** 0.1.0 shipped with keywords describing an
+  architecture-metrics tool (`module-depth`, `github-action`) and never
+  mentioned MCP, so a registry search for "mcp server" or "model context
+  protocol" did not return this package at all. The only query that found it
+  was the brand name, which nobody has a reason to search yet. Now indexed
+  under `mcp`, `model-context-protocol`, `mcp-server`, `claude`,
+  `claude-code`, `cursor`, `ai-agent` and `coding-agent` alongside the
+  existing analysis terms.
+
+## 0.1.0 — 2026-08-18
 
 First public release. Local-first repository intelligence over MCP: 23
 read-only tools that answer structural questions about a working tree and
