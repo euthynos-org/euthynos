@@ -5,10 +5,12 @@ import { langOf, moduleOf, isCodeFile, isTestPath, globToRegex } from '../discov
 import { parseSourceByLang } from '../parse/dispatch.js';
 
 /**
- * D0 — the diff engine (PHASE6-COMPLETION-PLAN, recorded deviation D8):
- * instead of a cached full per-commit HEAD snapshot, D0 parses only the
+ * The diff engine: what changed between HEAD and the worktree, reported at
+ * file granularity and at function granularity.
+ *
+ * It does NOT cache a full per-commit HEAD snapshot. It parses only the
  * CHANGED files' old blobs, in memory, cached by blob sha. Identical
- * answers for every question the Phase 6 tools ask, at a fraction of the
+ * answers for every question its consumer tools ask, at a fraction of the
  * cost, and ZERO writes anywhere — the old content never touches disk.
  *
  * Security posture (inherits the whole model):
@@ -102,7 +104,8 @@ function parseOldBlob(root: string, headRef: string, path: string): ParsedFile |
  * compare correctly. The signature is bodyHash PLUS literalHash: bodyHash
  * alone erases literals by design, which made a literal-only edit
  * (`return a + 2` -> `return a + 3`) invisible to the symbol diff — caught
- * by the D0 CRLF test before any tool consumed the engine.
+ * by the line-ending/CRLF tests in test/diff-engine.test.ts before any tool
+ * consumed the engine.
  */
 function hashesByName(fns: readonly FunctionRecord[]): Map<string, string> {
   const m = new Map<string, string[]>();
@@ -120,8 +123,8 @@ function firstDecl(fns: readonly FunctionRecord[], name: string): FunctionRecord
 }
 
 /**
- * The D8 hybrid: the repository's HEAD-state file set, assembled from the
- * CURRENT parses with changed files swapped for their HEAD parses
+ * The hybrid old-state view: the repository's HEAD-state file set, assembled
+ * from the CURRENT parses with changed files swapped for their HEAD parses
  * (added/untracked absent, deleted restored). Shared by check_my_changes
  * and boundary_check so the two can never diverge on what "old" means.
  */
@@ -157,8 +160,9 @@ export function hybridOldFiles(files: readonly ParsedFile[], d: DiffReport): Par
  * without it an excluded file re-enters the evidence surface through a
  * different door than the one the user closed: `generated/**` was absent
  * from the index, the graph and the scan, yet still appeared as a
- * "changed file" in check_my_changes (launch blocker G3). One universe
- * means one universe on every route into the answer.
+ * "changed file" in check_my_changes — a release-blocking defect this
+ * parameter exists to prevent. One universe means one universe on every
+ * route into the answer.
  */
 export function diffWorktree(
   root: string,
@@ -192,7 +196,7 @@ export function diffWorktree(
 
   // Tracked changes vs HEAD (staged + unstaged in one view), rename-aware.
   //
-  // EOL-phantom filter (found by the Phase 6 gate on a CLEAN clone): the
+  // EOL-phantom filter (first seen on a CLEAN clone of a repo): the
   // hardened runner sets GIT_CONFIG_NOSYSTEM, which drops the SYSTEM
   // core.autocrlf on Windows — so a repo cloned with autocrlf=true shows
   // every text file as modified (CRLF worktree vs LF blobs) while the
@@ -221,7 +225,7 @@ export function diffWorktree(
         skipped.push({ path: line.slice(0, 120), reason: 'path failed containment check' });
         continue;
       }
-      if (excluded(newRel) && excluded(oldRel)) continue; // G3
+      if (excluded(newRel) && excluded(oldRel)) continue; // both ends excluded — outside the indexed universe
       changedFiles.push({ path: newRel, status: 'renamed', oldPath: oldRel });
     } else {
       const rel = safeRel(root, parts[1] ?? '');
@@ -230,7 +234,7 @@ export function diffWorktree(
         continue;
       }
       const status = code.startsWith('A') ? 'added' : code.startsWith('D') ? 'deleted' : 'modified';
-      if (excluded(rel)) continue; // outside the authoritative universe (G3)
+      if (excluded(rel)) continue; // outside the authoritative universe
       if (status === 'modified' && !realChange.has(rel)) continue; // EOL-only phantom (see above)
       changedFiles.push({ path: rel, status });
     }
@@ -243,7 +247,7 @@ export function diffWorktree(
     const rel = safeRel(root, line.slice(3).trim().replace(/^"|"$/g, ''));
     if (rel === null) continue;
     if (!isCodeFile(rel)) continue; // non-code untracked files are out of scope
-    if (excluded(rel)) continue; // excluded tree — same universe as every other tier (G3)
+    if (excluded(rel)) continue; // excluded tree — same universe as every other tier
     changedFiles.push({ path: rel, status: 'untracked' });
   }
   changedFiles.sort((a, b) => a.path.localeCompare(b.path));

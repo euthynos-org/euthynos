@@ -14,10 +14,9 @@ import { getIndex } from '../src/index/incremental.js';
  * These statements are the product's differentiator: every negative or
  * capped answer names its evidence boundary, every count states its
  * truncation, every flag says what level it describes. Before this suite
- * existed, a refactor could delete all of it and 557 tests stayed green
- * (LAUNCH-READINESS-REVIEW §4.1). Do not weaken any assertion here to make
- * a change pass — the text IS the contract. Additions are welcome; removals
- * are a launch blocker.
+ * existed, a refactor could delete all of it and 557 tests stayed green.
+ * Do not weaken any assertion here to make a change pass — the text IS the
+ * contract. Additions are welcome; removals are a launch blocker.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +77,7 @@ beforeAll(() => {
   );
 });
 
-// ── A. The shipped honesty surface (CORRECTION §6 + Phase 6.1) ──────────────
+// ── A. Tools state their search surface on every answer ─────────────────────
 
 describe('similar_logic_exists states its search surface on EVERY answer', () => {
   it('non-empty branch: surface + NOT-searched + the reading rule', () => {
@@ -178,7 +177,7 @@ describe('export flags say what level they describe', () => {
   });
 });
 
-// ── B. The residual unbounded negatives (LAUNCH-READINESS-REVIEW §4.2-4.3) ──
+// ── B. Negatives that used to be stated without a bound ─────────────────────
 
 describe('residual negatives are now bounded', () => {
   it('find_symbol empty answer states its search surface', () => {
@@ -219,7 +218,7 @@ describe('residual negatives are now bounded', () => {
   });
 });
 
-// ── C. The discovery cap is never silent (§4.2) ─────────────────────────────
+// ── C. The discovery file cap is reported, never silently applied ───────────
 
 describe('the 60k discovery cap surfaces instead of truncating silently', () => {
   it('discoverFiles reports truncation through its meta out-param', () => {

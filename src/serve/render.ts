@@ -1,5 +1,5 @@
 /**
- * SHARED RESPONSE RENDERER (Phase 5, blueprint §23-24).
+ * SHARED RESPONSE RENDERER — multi-section tool output, one token budget.
  *
  * One place that turns ranked sections into budgeted text. The rules every
  * caller inherits by using it, instead of re-implementing:
@@ -31,10 +31,12 @@
  * the guarantee holds all the way down. context_bundle's 900-token budget is
  * ~20x the floor for its profiles; a test pins that relationship.
  *
- * Existing Phase 1-4 tools keep their proven, golden-tested renderers; their
- * budgets are enforced by the tool-metrics suite. New composite surfaces
- * (context_bundle first) MUST render through this. That split is a recorded
- * deviation (D6).
+ * NOT every tool renders through this module. The older single-purpose tools
+ * keep their own golden-tested renderers, and their budgets are enforced by
+ * the tool-metrics suite instead. New composite surfaces (context_bundle
+ * first) MUST render through this one. That split is deliberate and recorded
+ * as deviation D6 — an accepted inconsistency, not an oversight — so do not
+ * assume a given tool's output was budgeted here.
  */
 
 export interface RenderSection {

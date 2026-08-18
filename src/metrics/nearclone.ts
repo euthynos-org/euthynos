@@ -1,14 +1,14 @@
 import type { FunctionRecord, ParsedFile } from '../types.js';
 
 /**
- * NEAR-CLONE DETECTION (Phase 6, §14) — the tier the A1 milestone proved
- * exact hashing cannot reach, handed over with two named target cases:
+ * NEAR-CLONE DETECTION — the copies exact body hashing cannot reach, since
+ * it fires only on identical token streams. Two target cases:
  *
  *  1. DIVERGED RENAMED COPIES. hono's `isContentTypeBinary` (lambda-edge)
  *     and `defaultIsContentTypeBinary` (aws-lambda) are one function under
  *     two names whose regexes have drifted apart. Their normalized token
  *     streams are IDENTICAL (`return ! LIT . test ( ID )`) — exact clone
- *     detection collapses literals by design, and the A1 literal gate
+ *     detection collapses literals by design, and the literal gate
  *     rightly keeps them out of the exact tier. What identifies them as a
  *     diverged copy is precisely the combination the exact tier rejects:
  *     same structure + different literals + similar-but-different names.
@@ -17,18 +17,19 @@ import type { FunctionRecord, ParsedFile } from '../types.js';
  *     added, a parameter threaded through). Detected via Jaccard over the
  *     bottom-K 4-gram sketches parsed into every FunctionRecord.
  *
- * This tier is ADDITIVE to the frozen A1 exact-clone machinery: it reports
+ * This tier is ADDITIVE to the exact-clone machinery: it reports
  * under its own label ('near-clone'), never enters the contamination score,
  * and its existence must not change a single exact/tiny finding —
- * `test/intra-module-clones.test.ts` stays green unchanged, by decree.
+ * `test/intra-module-clones.test.ts` must keep passing without edits.
  *
- * The interface-pattern discriminator (from the agent's own verdicts): the
- * SAME exported name with different literals across sibling files is an
+ * The interface-pattern discriminator, learned from reviewing real findings:
+ * the SAME exported name with different literals across sibling files is an
  * interface being implemented per runtime (getConnInfo reading a different
  * header per platform) — suppressed. DIFFERENT names with the same shape is
- * a copy that was renamed and then drifted — reported. Phase 1's rule that
- * a name signal never exceeds 0.2 weight still holds: names GATE candidacy
- * here, they never inflate the similarity score, which stays structural.
+ * a copy that was renamed and then drifted — reported. This project's rule
+ * that a name signal never exceeds 0.2 weight still holds: names GATE
+ * candidacy here, they never inflate the similarity score, which stays
+ * structural.
  */
 
 export interface NearCloneFinding {
@@ -43,7 +44,9 @@ export interface NearCloneFinding {
 }
 
 /**
- * Floors, mirroring the frozen A1 tiers without touching them.
+ * Minimum body-token counts each tier requires. Declared here rather than
+ * shared with the exact-clone tier, so tuning near-clone sensitivity cannot
+ * move an exact-tier threshold.
  *
  * The literal-drift floor is 3, not 6: the TypeScript parser walks AST
  * NODES (forEachChild skips punctuation and keywords), so a single-return
@@ -101,9 +104,9 @@ export function detectAllNearClones(files: readonly ParsedFile[]): NearCloneFind
     if (group.length < 2) continue;
     // Qualifying pairs first, then UNION into variant clusters and emit ONE
     // finding per cluster — N same-shape variants would otherwise cost
-    // N(N-1)/2 rows saying the same thing, the exact defect the A1 exact
-    // tier already fixed (hono's useEffect/useLayoutEffect/useInsertionEffect
-    // triplet is 3 rows as pairs, 1 as a cluster).
+    // N(N-1)/2 rows saying the same thing — the same pair explosion the
+    // exact tier already collapses (hono's useEffect/useLayoutEffect/
+    // useInsertionEffect triplet is 3 rows as pairs, 1 as a cluster).
     const parent = new Map<FunctionRecord, FunctionRecord>();
     const find = (x: FunctionRecord): FunctionRecord => {
       let r = x;

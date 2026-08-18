@@ -1,5 +1,5 @@
 /**
- * MCP tools for Euthynos (Slice 2.5).
+ * MCP tools for Euthynos.
  *
  * Three read-only tools over the deterministic scan engine. Zero new
  * dependencies: these plain objects are serialized verbatim into the
@@ -58,8 +58,9 @@ const graphCache = new Map<string, { gen: number; graph: CodeGraph }>();
 let lastCacheOutcome: 'hit' | 'miss' | 'n/a' = 'n/a';
 /** Resolved repo root of the current call — telemetry uses THIS, not the raw
  *  arg, so pathless calls (the common MCP configuration, cwd-defaulted) are
- *  persisted too. "Instruments EVERY tool call" was false while persistence
- *  required an explicit path (launch-readiness §4.10). */
+ *  persisted too. While persistence required an explicit `path` argument,
+ *  every cwd-defaulted call went unrecorded, so the telemetry log covered
+ *  only a minority of real usage. */
 let lastResolvedRoot: string | null = null;
 /** Files the current tool call's underlying scan covered (for telemetry). */
 let lastFilesTouched = 0;
@@ -67,8 +68,8 @@ let lastFilesTouched = 0;
 let lastDedup = false;
 
 function cachedScan(root: string, months: number): ScanReport {
-  // Same authority as every other tier (G2): the scan report must not be
-  // computed over a wider universe than the index publishes.
+  // The index is the single authority on which files exist: the scan report
+  // must not be computed over a wider universe than the index publishes.
   const index = getIndex(root);
   const gen = index.generation;
   const key = `${root}|${months}`;
@@ -79,7 +80,7 @@ function cachedScan(root: string, months: number): ScanReport {
     return hit.report;
   }
   lastCacheOutcome = 'miss';
-  // G5: reuse the store's artifacts rather than re-walking and re-parsing.
+  // Reuse the index's artifacts rather than re-walking and re-parsing.
   const report = scan(root, { months, ignore: index.ignore, files: index.files });
   lastFilesTouched = report.filesScanned;
   cache.set(key, { gen, report });
@@ -106,9 +107,9 @@ function cachedParse(root: string): { files: ParsedFile[]; moduleGraph: ModuleGr
 
 function cachedGraph(root: string): CodeGraph {
   // The index publishes the EFFECTIVE ignore set; the graph must discover
-  // over the same universe or the two tiers answer from different repos
-  // (launch blocker G2 — `callers_of` used to resolve symbols out of files
-  // the repo config excluded).
+  // over the same universe or the two tiers answer from different repos.
+  // Before that was enforced, `callers_of` resolved symbols out of files
+  // the repo config excluded.
   const index = getIndex(root);
   const gen = index.generation;
   const hit = graphCache.get(root);
@@ -118,9 +119,9 @@ function cachedGraph(root: string): CodeGraph {
     return hit.graph;
   }
   lastCacheOutcome = 'miss';
-  // G5: the store already holds the parsed artifacts AND the module graph
-  // built from them, and cachedReport holds the metrics scan over the same
-  // set — so a graph rebuild costs graph assembly only, never a re-parse.
+  // The index already holds the parsed artifacts AND the module graph built
+  // from them, and cachedScan holds the metrics scan over the same set — so
+  // a graph rebuild costs graph assembly only, never a re-parse.
   const graph = buildRepoGraph(root, {
     withMetrics: true,
     ignore: index.ignore,
@@ -690,7 +691,7 @@ function readFunctionTool(args: Record<string, unknown>): ToolResult {
     const callers = callersOf(graph, fn.node.id).filter((c) => c.depth === 1).slice(0, 6);
     const callees = calleesOf(graph, fn.node.id).filter((c) => c.depth === 1).slice(0, 6);
     // "(none in the static graph …)" — the bare "(none in graph)" read as a
-    // fact about the code rather than about the graph's reach (§4.3).
+    // fact about the code rather than about the graph's reach.
     const noneNote = '(none in the static graph — dynamic dispatch is invisible)';
     lines.push(`Called by: ${callers.length === 0 ? noneNote : callers.map((c) => `${c.label} (${c.file}:${c.line})`).join(', ')}`);
     lines.push(`Calls: ${callees.length === 0 ? noneNote : callees.map((c) => `${c.label} (${c.file}:${c.line})`).join(', ')}`);
@@ -896,7 +897,7 @@ function architectureHealthTool(args: Record<string, unknown>): ToolResult {
   }
   if (r.skippedFiles !== undefined && r.skippedFiles.length > 0) {
     // A file that fails to parse vanishes from the graph; an unqualified
-    // 0-100 score over a partially-parsed repo overclaims (§4.3).
+    // 0-100 score over a partially-parsed repo overclaims.
     lines.push(`Note: ${r.skippedFiles.length} file(s) failed to parse and are OUTSIDE this score.`);
   }
   lines.push('');
@@ -951,10 +952,11 @@ function similarLogicExistsTool(args: Record<string, unknown>): ToolResult {
   // the metric's filter was silently narrowing the tool.
   const intra = r.contamination.intraModule;
 
-  // Near-clone tier (Phase 6): diverged copies exact hashing cannot see —
-  // renamed functions whose literals drifted, and bodies whose structure
-  // itself changed. ADDITIVE to the frozen exact tier, own label, never
-  // scored. Pairs the exact tier already reports are excluded here.
+  // Near-clone tier: diverged copies exact hashing cannot see — renamed
+  // functions whose literals drifted, and bodies whose structure itself
+  // changed. ADDITIVE to the exact-hash tier: reported under its own label,
+  // never folded into the contamination score, and pairs the exact tier
+  // already reports are excluded here.
   const { files } = cachedParse(root);
   const exactPairs = new Set(
     [...findings, ...intra].map((f) =>
@@ -1077,7 +1079,7 @@ function impactOfTool(args: Record<string, unknown>): ToolResult {
     imp.affectedFunctions.slice(0, 15).forEach((a) => lines.push(`  d${a.depth} ${a.label} — ${a.file}:${a.line}${confMark(a.confidence)}`));
     if (imp.affectedFunctions.length > 15) lines.push(`  … ${imp.affectedFunctions.length - 15} more`);
   }
-  // Name the cheapest next step so the follow-up is not a grep (§28).
+  // Name the cheapest next step so the follow-up is not a grep.
   lines.push('');
   lines.push(
     `Exact call sites with their source lines: find_references({ symbol: "${imp.target.label}" }). ` +
@@ -1104,7 +1106,7 @@ function callersOfTool(args: Record<string, unknown>): ToolResult {
   const lines = [note + `${list.length} transitive callers of ${r.node.label}:`, ''];
   list.slice(0, 25).forEach((a) => lines.push(`  d${a.depth} ${a.label} — ${a.file}:${a.line}${confMark(a.confidence)}`));
   if (list.length > 25) lines.push(`  … ${list.length - 25} more`);
-  // Every response names the cheapest next step (§28): an agent that wants
+  // Every response names the cheapest next step: an agent that wants
   // the exact call-site lines should not go back to grep for them.
   lines.push('');
   lines.push(
@@ -1114,7 +1116,13 @@ function callersOfTool(args: Record<string, unknown>): ToolResult {
   return { text: lines.join('\n') };
 }
 
-/** Phase 6 C1 — the exact mirror of callers_of over callsOut. */
+/**
+ * callees_of — everything this function calls, direct and transitive.
+ *
+ * The exact mirror of callers_of: it walks each node's outgoing call edges
+ * (callsOut) instead of its incoming ones, and states the same boundary —
+ * static calls in indexed source only.
+ */
 function calleesOfTool(args: Record<string, unknown>): ToolResult {
   const root = repoPathArg(args);
   const graph = cachedGraph(root);
@@ -1142,13 +1150,14 @@ function calleesOfTool(args: Record<string, unknown>): ToolResult {
 }
 
 /**
- * Phase 6 C5 — check_my_changes (PHASE6-COMPLETION-PLAN §1/§5).
+ * check_my_changes — what the working tree changed against HEAD, and what
+ * the repository can say about those changes.
  *
- * The contract, verbatim from the plan: findings + boundaries, NEVER a
- * safety verdict. The words "safe", "isolated" or "no impact" never appear
- * as facts; the merge decision stays with the agent. Boundary findings are
- * NEWLY-INTRODUCED only, with the pre-existing count stated (no silent
- * baseline). Every section names what it cannot see.
+ * The contract: findings + boundaries, NEVER a safety verdict. The words
+ * "safe", "isolated" or "no impact" never appear as facts; the merge
+ * decision stays with the agent. Boundary findings are NEWLY-INTRODUCED
+ * only, with the pre-existing count stated (no silent baseline). Every
+ * section names what it cannot see.
  */
 function checkMyChangesTool(args: Record<string, unknown>): ToolResult {
   const root = repoPathArg(args);
@@ -1201,7 +1210,9 @@ function checkMyChangesTool(args: Record<string, unknown>): ToolResult {
   }
 
   // ── Boundary: NEWLY-INTRODUCED deep imports only ──────────────────────────
-  // Old state = the D8 hybrid, shared with boundary_check via the engine.
+  // Old state = the hybrid HEAD view (current parses, with changed files
+  // swapped for their HEAD parses), shared with boundary_check via the
+  // engine so the two can never disagree on what "old" means.
   const oldFiles = hybridOldFiles(files, d);
   const oldGraph = buildGraph(oldFiles);
   const edgeKey = (e: { fromFile: string; toFile: string }): string => `${e.fromFile}|${e.toFile}`;
@@ -1314,9 +1325,10 @@ function checkMyChangesTool(args: Record<string, unknown>): ToolResult {
 }
 
 /**
- * Phase 6 C6 — boundary_check: the boundary section of check_my_changes as
- * a standalone question, module-scoped or diff-scoped. Negatives are scoped
- * to the checks actually performed — never a soundness claim.
+ * boundary_check — the boundary section of check_my_changes as a standalone
+ * question, module-scoped or diff-scoped. Negatives are scoped to the checks
+ * actually performed (deep imports past a module index, and import cycles) —
+ * never a soundness claim about the architecture as a whole.
  */
 function boundaryCheckTool(args: Record<string, unknown>): ToolResult {
   const root = repoPathArg(args);
@@ -1375,10 +1387,10 @@ function boundaryCheckTool(args: Record<string, unknown>): ToolResult {
 }
 
 /**
- * Phase 6 C7 — diff_context: working context for what just changed. Serves
- * the SPANS of up to three added/modified symbols plus direct callers and
- * route-labeled tests; states exactly what was omitted (H4' awareness: a
- * span boundary is a recall boundary — the omission is named, never silent).
+ * diff_context — working context for what just changed. Serves the SPANS of
+ * up to three added/modified symbols plus direct callers and route-labeled
+ * tests, and states exactly what was omitted: a span boundary is a recall
+ * boundary, so every cut is named by count and by name, never left silent.
  */
 function diffContextTool(args: Record<string, unknown>): ToolResult {
   const root = repoPathArg(args);
@@ -1438,8 +1450,10 @@ function diffContextTool(args: Record<string, unknown>): ToolResult {
 }
 
 /**
- * Phase 6 C8 — change_impact: the blast radius of the whole diff, per
- * modified symbol, with the static-graph boundary stated. Evidence only.
+ * change_impact — the blast radius of the whole diff, per modified symbol,
+ * with the static-graph boundary stated on the answer itself (dynamic
+ * dispatch and unindexed files are invisible). Evidence only; whether the
+ * diff should ship stays with the caller.
  */
 function changeImpactTool(args: Record<string, unknown>): ToolResult {
   const root = repoPathArg(args);
@@ -1480,10 +1494,11 @@ function changeImpactTool(args: Record<string, unknown>): ToolResult {
 }
 
 /**
- * Phase 6 C4 — tests_for. Target forms: 'file/path.ts', 'file/path.ts#name'
- * or a bare symbol name (resolved through the symbol index; ambiguity is
- * answered, never guessed). Every hit is route-labeled; the empty answer
- * names all three routes and never claims the code is untested.
+ * tests_for — which test files reach a file or symbol. Target forms:
+ * 'file/path.ts', 'file/path.ts#name' or a bare symbol name (resolved
+ * through the symbol index; ambiguity is answered, never guessed). Every hit
+ * is route-labeled; the empty answer names all three routes and never claims
+ * the code is untested.
  */
 function testsForTool(args: Record<string, unknown>): ToolResult {
   const root = repoPathArg(args);
@@ -1538,11 +1553,11 @@ function testsForTool(args: Record<string, unknown>): ToolResult {
 }
 
 /**
- * Phase 6 C2/C3 — module-level import-edge views. Shared renderer; the
- * direction decides which side of the module graph is read. Boundary
- * stated on EVERY answer: import edges in indexed source only, and an
- * empty dependents list is never an "unused module" claim (the impact_of
- * lesson at module level — PHASE6-COMPLETION-PLAN §5).
+ * dependencies_of / dependents_of — module-level import-edge views. Shared
+ * renderer; the direction decides which side of the module graph is read.
+ * Boundary stated on EVERY answer: import edges in indexed source only, and
+ * an empty dependents list is never an "unused module" claim — the same rule
+ * impact_of applies to functions, applied here at module level.
  */
 function moduleDepsTool(args: Record<string, unknown>, direction: 'dependencies' | 'dependents'): ToolResult {
   const root = repoPathArg(args);
@@ -1622,18 +1637,18 @@ function pathBetweenTool(args: Record<string, unknown>): ToolResult {
   return { text: `Call path (${path.length} hops):\n  ${path.map((n) => n.label).join(' → ')}` };
 }
 
-// ── query_repository (Phase 4 router) ──────────────────────────────────────
+// ── query_repository (plain-language router) ───────────────────────────────
 
 /**
  * One plain-language entry point that routes deterministically to the tools
- * above (plan §20).
+ * above.
  *
  * It exists because an agent should not have to know our tool taxonomy to ask
  * a repository question — but it is only allowed to exist because the shaper
  * clears the >=90% intent-accuracy gate in `test/shaper-golden.test.ts`. A
- * router that guesses is worse than no router: the M0 benchmark showed one
- * caught mistake makes an agent re-verify everything afterwards, which costs
- * more tokens than it ever saved.
+ * router that guesses is worse than no router: benchmarked sessions showed
+ * one caught mistake makes an agent re-verify everything afterwards, which
+ * costs more tokens than it ever saved.
  *
  * So the failure paths are first-class. It answers with the routed tool's own
  * output when it is sure, names the candidates when it is not, and says plainly
@@ -1672,7 +1687,7 @@ function queryRepositoryTool(args: Record<string, unknown>): ToolResult {
         // Scoped to the actual search surface: the symbol/vocabulary INDEX.
         // "nothing in this repository matches" over-claimed — a symbol in an
         // unindexed file or below declaration granularity is invisible here
-        // and would still have produced this answer (§4.2).
+        // and would still have produced this answer.
         `${head}\nTarget: UNRESOLVED — no indexed declaration matches ` +
         `${shaped.resolution.tried.map((t) => `'${t}'`).join(', ') || 'the query'} ` +
         `(the search surface is the symbol index; unindexed files and sub-declaration code are not searched).\n\n` +
@@ -1716,9 +1731,9 @@ function queryRepositoryTool(args: Record<string, unknown>): ToolResult {
 /**
  * Intent -> the existing tool that answers it. `fresh` rides along to the
  * source-serving routes: without it, a dedup receipt served THROUGH the
- * router had no reachable escape hatch (review finding — the receipt says
+ * router had no reachable escape hatch: the receipt tells the caller to
  * "pass fresh: true", and that must work on the tool the agent actually
- * called).
+ * called, not only on the tool it was routed to.
  */
 function routeResolved(shaped: StructuredQuery, root: string, qualified: string, fresh: boolean): ToolResult {
   switch (shaped.intent) {
@@ -1747,7 +1762,9 @@ function routeResolved(shaped: StructuredQuery, root: string, qualified: string,
       };
     case 'tests':
     case 'history':
-      // Honest gap: these land in Phase 6 (tests map) and the history layer.
+      // Honest gap: the shaper recognizes these intents but no route is
+      // wired for them, so say so instead of routing to something adjacent.
+      // (tests_for answers the tests question when called directly.)
       return {
         text:
           `Not yet available: '${shaped.intent}' queries are not implemented. ` +
@@ -1761,13 +1778,13 @@ function routeResolved(shaped: StructuredQuery, root: string, qualified: string,
   }
 }
 
-// ── compare_implementations (Phase 6) ──────────────────────────────────────
+// ── compare_implementations ────────────────────────────────────────────────
 
 /**
  * Evidence for a canonical-selection JUDGMENT — never the judgment itself.
  *
- * A1 measured why duplicate-audit sessions still read ~23 files after a
- * correct duplicate list: "which copy should be canonical" required the
+ * Benchmarked duplicate-audit sessions still read ~23 files after receiving
+ * a correct duplicate list: "which copy should be canonical" required the
  * agent to compare the implementations, and it assembled that comparison by
  * hand. This serves the assembled comparison in one call: both spans, what
  * structurally differs, and each copy's callers and tests. Deciding stays
@@ -1870,9 +1887,9 @@ function compareImplementationsTool(args: Record<string, unknown>): ToolResult {
       (f) => f.isTest && f.imports.some((imp) => resolvesTo(imp.specifier, f.path, h.file)),
     );
     lines.push(
-      // Heuristic label mandated by the readiness review (§4.3): this counts
-      // test FILES whose imports resolve to the file — not executed coverage
-      // — and a 0 must never read as "untested".
+      // The label must stay heuristic: this counts test FILES whose imports
+      // resolve to the file — not executed coverage — and a 0 must never
+      // read as "untested".
       `tests importing its file (heuristic — import edges, not execution): ${tests.length}${tests.length > 0 ? ` — ${tests.slice(0, 2).map((t) => t.path).join(', ')}${tests.length > 2 ? `, +${tests.length - 2} more` : ''}` : ''}`,
     );
     void label;
@@ -1913,13 +1930,14 @@ function sketchJaccard(a: readonly number[], b: readonly number[]): number {
   return inter / (sa.size + new Set(b).size - inter);
 }
 
-// ── context_bundle (Phase 5) ───────────────────────────────────────────────
+// ── context_bundle ─────────────────────────────────────────────────────────
 
 /**
  * Rendered bundles are cached per (root, resolved target, intent) against the
- * index generation — the blueprint's §45 "repoStateHash" IS the generation,
- * since it moves whenever any indexed file moves. A hit costs nothing and is
- * guaranteed current; an edit anywhere invalidates by construction.
+ * index generation, which moves whenever any indexed file moves — so the
+ * generation IS the repo-state hash this cache keys on. A hit is served only
+ * while the generation is unchanged, so it always reflects the current
+ * working tree; an edit anywhere invalidates by construction.
  */
 const bundleCache = new Map<string, { gen: number; text: string }>();
 
@@ -2003,8 +2021,8 @@ function contextBundleTool(args: Record<string, unknown>): ToolResult {
     },
     intent,
   });
-  // The preamble is part of the budget it announces (review finding: it was
-  // outside, so the total ran over by its own cost).
+  // The preamble is part of the budget it announces: while it sat outside
+  // the budget, the total ran over by the preamble's own cost.
   const preamble = `context_bundle · intent: ${intent} · budget ${BUNDLE_BUDGET_TOKENS} tokens\n\n`;
   const body = renderBudgeted(sections, BUNDLE_BUDGET_TOKENS - Math.ceil(preamble.length / 4));
   const text = `${preamble}${body}`;
@@ -2030,12 +2048,12 @@ function stringArg(args: Record<string, unknown>, key: string): string {
 }
 
 /**
- * Servable-root pinning (LAUNCH-READINESS-REVIEW §4.7). When configured —
- * the MCP server pins roots at startup — every tool's `path` argument must
- * resolve inside one of them. Without pinning, ANY readable directory on
- * the machine was servable per call, which turned prompt-injected text in
- * one repository into a lens onto every other local project. Library/test
- * use without configuration is unrestricted (no server, no exposure).
+ * Servable-root pinning. When configured — the MCP server pins roots at
+ * startup — every tool's `path` argument must resolve inside one of them.
+ * Without pinning, ANY readable directory on the machine was servable per
+ * call, which turned prompt-injected text in one repository into a lens
+ * onto every other local project. Library/test use without configuration
+ * is unrestricted (no server, no exposure).
  */
 let servableRoots: string[] | null = null;
 
@@ -2100,8 +2118,7 @@ function findModule(r: ScanReport, query: string): ModuleReport | string {
 
 /**
  * State how the target was resolved when it was NOT an exact match — an
- * agent must never mistake a substring hit for the symbol it asked for
- * (§29 confidence contract).
+ * agent must never mistake a substring hit for the symbol it asked for.
  */
 function matchNote(match: MatchKind, query: string, node: { label: string; file?: string; line?: number }): string {
   if (match !== 'substring') return '';

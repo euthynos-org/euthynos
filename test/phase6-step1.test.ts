@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { callTool } from '../src/mcp/tools.js';
 
 /**
- * Phase 6 Step 1 (PHASE6-COMPLETION-PLAN §1-§5): callees_of +
- * dependencies_of + dependents_of — pure projections of graphs that already
- * exist. Contract pinned here BEFORE implementation:
+ * Output contract for callees_of, dependencies_of and dependents_of — three
+ * read-only projections over graphs the indexer has already built. These
+ * tests pin the wording and shape of the answers, not just their data:
  *
  *  - callees_of mirrors callers_of: transitive, depth-labeled, confidence-
  *    marked, and its EMPTY answer carries the static-graph boundary.

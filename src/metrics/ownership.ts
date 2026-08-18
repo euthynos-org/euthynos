@@ -2,11 +2,16 @@ import type { MetricScore } from '../types.js';
 import type { ModuleAuthorStats } from '../git/authors.js';
 
 /**
- * KNOWLEDGE RISK (pillars 11+12):
+ * KNOWLEDGE RISK — how widely a module's commit history is spread across authors.
  *   score = clamp(0, 100, round(25 * min(busFactor, 4) - max(0, topShare - 0.5) * 100))
  *   Higher = healthier distribution. Bus factor earns 25 pts per author
  *   (saturating at 4); a dominant author pays one point per percentage
  *   point of commit share above 50%.
+ *
+ * Reads commit authorship only — it says nothing about the quality of the code
+ * or how well any author actually understands it. Below 3 commits the score is
+ * null ('n/a'), not 0: that history is too thin to tell concentration apart
+ * from a module nobody has touched yet.
  *
  * Bands: 80+ Distributed · 60-79 Shared · 40-59 Concentrated · 0-39 Bus Factor 1
  */

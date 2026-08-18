@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { buildGraph } from '../src/graph/imports.js';
 import type { ImportRecord, ParsedFile } from '../src/types.js';
 
-// Module-path import resolution (Phase 5). These languages name a package or a
-// symbol file, not a path relative to the importer — buildGraph must still wire
-// the module graph so leverage/seams/utilization count for them.
+// Module-path import resolution for Java, Go, Rust, PHP and C/C++. These
+// languages name a package or a symbol file, not a path relative to the
+// importer — buildGraph must still wire the module graph so
+// leverage/seams/utilization count for them. The negative cases below pin
+// where resolution must stop: a bare last segment (java.util.List), a suffix
+// that matches two modules, and an external module with no local file all
+// stay unresolved.
 
 function file(path: string, module: string, imports: ImportRecord[] = [], exports: string[] = []): ParsedFile {
   return {

@@ -19,7 +19,9 @@ import { parseVueSource } from '../src/parse/vue.js';
 import { parseCobolSource } from '../src/parse/cobol.js';
 
 /**
- * Cross-language parity for the Phase 2.0 contract.
+ * Cross-language parity: every parser must populate the same fields as every
+ * other, so a tool's answer does not silently get worse depending on which
+ * language the file happens to be written in.
  *
  * `find_references`, `file_outline` and `read_function` are language-agnostic
  * promises: whatever repo you point us at, a reference comes back with the line
@@ -371,12 +373,14 @@ describe.each(CASES)('$lang — Phase 2.0 parity', (c) => {
 
 describe('the member-call distinction protects resolution', () => {
   /**
-   * The benchmark's most damaging failure was a phantom edge: `arr.every()`
-   * wired to a repo function named `every`, and the agent caught us being
-   * wrong. That was fixed for TypeScript by marking receiver calls; until now
-   * every other language was still exposed to it, because its parser reported
-   * no `memberCalls` at all and the graph therefore treated `x.count()` as a
-   * bare call eligible for a unique-name match.
+   * The most damaging failure this guards against is a phantom edge: a builtin
+   * like `arr.every()` wired to a repo function that merely happens to share
+   * the name `every`. It showed up in real use, not in a unit test — an agent
+   * reading the graph was handed the wrong callee. That was fixed for
+   * TypeScript by marking receiver calls; until now every other language was
+   * still exposed to it, because its parser reported no `memberCalls` at all
+   * and the graph therefore treated `x.count()` as a bare call eligible for a
+   * unique-name match.
    */
   it('a builtin called on a receiver is not eligible for a unique-name match', () => {
     const py = parsePythonSource(

@@ -6,14 +6,15 @@ import { parseTsSource } from '../src/parse/ts.js';
 import type { ParsedFile } from '../src/types.js';
 
 /**
- * THE PHASE 6 GATE (handed over from the frozen A1 milestone):
+ * What the near-clone tier is required to do, checked below:
  *
  *   1. Both hono cases found — the diverged renamed copy
  *      (isContentTypeBinary ↔ defaultIsContentTypeBinary) and the
  *      canonical-decision evidence path.
  *   2. Reported as NEAR-clones, never as exact clones.
- *   3. The A1 fixtures stay green UNCHANGED (they run in this same suite
- *      run), and the literal-sensitive tiny-clone cases gain ZERO findings.
+ *   3. The pre-existing exact-clone fixtures stay green UNCHANGED (they run
+ *      in this same suite run), and the literal-sensitive tiny-clone cases
+ *      gain ZERO findings.
  *
  * The near-clone tier is ADDITIVE: it must never loosen exact matching.
  */
@@ -23,7 +24,7 @@ function parse(files: { path: string; module: string; src: string }[]): ParsedFi
 }
 
 describe('gate case 1: the diverged renamed copy (hono, verbatim)', () => {
-  // The REAL code from bench-repos/hono, copied exactly — the fixture must
+  // The REAL code from hono, copied exactly — the fixture must
   // not be friendlier than reality.
   const files = parse([
     {
@@ -117,8 +118,8 @@ describe('the frozen boundaries hold', () => {
     `export const ${name} = (c: any) => ({ remote: { address: c.req.header('${header}') } })\n`;
 
   it('same-name literal variants (interface pattern) are NOT near-clones', () => {
-    // The A1 verdict, now guarded on this tier too: getConnInfo implemented
-    // per-runtime with different headers is an interface, not a drift.
+    // Same verdict as the exact tier: getConnInfo implemented per-runtime
+    // with different headers is an interface, not a drift.
     const files = parse([
       { path: 'src/adapter/cf/conninfo.ts', module: 'adapter', src: conn('cf-connecting-ip') },
       { path: 'src/adapter/vercel/conninfo.ts', module: 'adapter', src: conn('x-real-ip') },

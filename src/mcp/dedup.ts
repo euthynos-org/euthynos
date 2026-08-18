@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 
 /**
- * SESSION DEDUPLICATION (Phase 5, blueprint addition B; ADR-008).
+ * SESSION DEDUPLICATION — repeat reads of UNCHANGED source are answered with a
+ * receipt; source that changed is always re-sent in full.
  *
- * Agents re-request source they already hold — M1's transcripts show correct
- * answers followed by re-reads of the same spans. Re-sending an identical
- * span is pure context pollution (§25), so a repeat request whose content has
- * NOT changed is answered with a ~20-token receipt instead of the source.
+ * Agents re-request source they already hold — benchmark transcripts show
+ * correct answers followed by re-reads of the same spans. Re-sending an
+ * identical span is pure context pollution, so a repeat request whose content
+ * has NOT changed is answered with a ~20-token receipt instead of the source.
  *
  * The rules that keep this safe:
  *

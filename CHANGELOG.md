@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.3 — 2026-08-19
+
+Documentation and comments only. No engine change: `dist/` behaviour, the 23
+tools and their schemas are unchanged.
+
+- **Internal planning vocabulary removed from source comments.** Comments across
+  30 files referenced an internal sprint system — "Phase 6 C5", "Slice 2.5",
+  "pillars 11+12", "blueprint §21-22", "PHASE6-COMPLETION-PLAN §1/§5", "ADR-008"
+  — pointing at documents no reader outside the project can open. Each is now a
+  sentence describing what the code does or guarantees. Verified line by line as
+  a comments-only change: no executable line, identifier, type or assertion was
+  altered.
+- **Fixed a leak in tool output.** The tests section of `context_bundle` printed
+  "call-graph-aware tests_for lands in Phase 6" to the calling agent. It now
+  states the boundary instead: the heuristic is import-edge based and therefore
+  a lower bound.
+- **Documentation moved into `docs/`.** ARCHITECTURE, SUPPORTED-SCALE,
+  PROVENANCE, BENCHMARK-INTEGRITY-AUDIT, TRADEMARK, CONTRIBUTING and SECURITY
+  now live there. README, CHANGELOG, LICENSE, NOTICE and DCO stay at the root,
+  where npm and GitHub expect them; GitHub still detects CONTRIBUTING and
+  SECURITY under `docs/`.
+- **`research/` deliberately not moved.** `.gitattributes` pins
+  `research/** -text` to preserve the frozen artifacts' byte-identity, and
+  PROVENANCE publishes their sha256 against those paths. Moving them would break
+  both.
+- All 32 internal documentation links re-pointed and verified to resolve.
+- README: the team-platform section now leads with early access at euthynos.dev,
+  and still states plainly that no public instance exists yet.
+
 ## 0.1.2 — 2026-08-18
 
 Documentation only. No engine change; `dist/` behaviour, the 23 tools and their
@@ -70,8 +99,8 @@ state the boundary of every answer.
 > **superseded internal measurements, not V1 claims**, and are deliberately not
 > repeated below. The changes themselves are real and their *direction* is not
 > in doubt; only their magnitude is unpublished. See
-> [PROVENANCE.md](PROVENANCE.md) for the reasoning and
-> [BENCHMARK-INTEGRITY-AUDIT.md](BENCHMARK-INTEGRITY-AUDIT.md) for the audit
+> [docs/PROVENANCE.md](docs/PROVENANCE.md) for the reasoning and
+> [docs/BENCHMARK-INTEGRITY-AUDIT.md](docs/BENCHMARK-INTEGRITY-AUDIT.md) for the audit
 > that set the bar. Measure your own machine with
 > `scripts/measurement/measure-latency.mjs`.
 
@@ -110,8 +139,8 @@ state the boundary of every answer.
 
 ### Known limitations
 
-See `SUPPORTED-SCALE.md` for the validated scale envelope and
-`ARCHITECTURE.md` for what is deliberately absent. In short: validated to
+See `docs/SUPPORTED-SCALE.md` for the validated scale envelope and
+`docs/ARCHITECTURE.md` for what is deliberately absent. In short: validated to
 ~10,000 files; memory is the binding constraint above that; precise latency
 figures are not published in V1; analysis is static, so dynamic dispatch and
 reflection are invisible and every answer says so.

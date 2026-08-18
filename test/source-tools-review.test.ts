@@ -13,7 +13,18 @@ beforeEach(() => resetDedup());
 import { readSpan, SpanError } from '../src/serve/spans.js';
 
 /**
- * Regressions for every finding confirmed by the Phase 2 adversarial review.
+ * Regressions for the source-reading tools — read_function, read_span,
+ * callers_of, find_references, find_symbol, file_outline. Every test here pins
+ * a defect an adversarial review of those tools confirmed, so that it cannot
+ * return unnoticed.
+ *
+ * The four failure classes covered below:
+ *   - serving a different symbol than the one that was asked for;
+ *   - answering from a cache that predates an edit to the file;
+ *   - reading a file that is not indexed source, or that resolves outside the
+ *     repository root;
+ *   - reporting a count or a span the file does not actually support.
+ *
  * Each test names the failure it prevents; none of these may come back.
  */
 

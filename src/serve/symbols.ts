@@ -2,9 +2,11 @@ import type { ParsedFile, SymbolSpan } from '../types.js';
 
 /**
  * SYMBOL INDEX — resolve a name (or a human phrase) to exact declarations,
- * and find every place a symbol is referenced. Deterministic lexical
- * ranking only; BM25 + repository vocabulary arrive in Phase 4 and slot in
- * behind the same interface.
+ * and find every place a symbol is referenced. Ranking is deterministic
+ * lexical scoring only — no corpus statistics and no embeddings, so the
+ * same index and query always yield the same order. Richer ranking (BM25,
+ * repository vocabulary) is a planned addition that slots in behind this
+ * same interface rather than changing it.
  */
 
 export interface SymbolHit {

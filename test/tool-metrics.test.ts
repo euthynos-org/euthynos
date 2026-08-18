@@ -7,7 +7,7 @@ import { callTool } from '../src/mcp/tools.js';
 import { callRecords, resetCallRecords } from '../src/mcp/telemetry.js';
 
 /**
- * TOOL-METRICS GOLDEN SUITE (benchmark cost policy, tier 2).
+ * TOOL-METRICS GOLDEN SUITE — the no-model tier of the cost benchmarks.
  *
  * Replays scripted tool-call sequences over a fixture repo and asserts the
  * SHAPE of every response — token budget, byte size, latency ceiling, cache
@@ -23,7 +23,7 @@ const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'sa
 /**
  * Per-tool response budgets (estimated tokens = chars/4). Deliberately
  * generous vs. today's output so the test catches BLOWUPS, not drift; the
- * P0 tools will land with much tighter budgets of their own.
+ * source-reading tools are meant to land with much tighter budgets of their own.
  */
 const BUDGETS: Record<string, number> = {
   architecture_health: 900,
@@ -32,23 +32,27 @@ const BUDGETS: Record<string, number> = {
   impact_of: 700,
   callers_of: 700,
   path_between: 400,
-  // P0 source tools — the budgets that make them cheaper than reading.
+  // Source-reading tools — budgets sized to stay cheaper than opening the file.
   repo_map: 1500,
   file_outline: 250,
   read_function: 500,
   read_span: 400,
   find_symbol: 300,
   find_references: 300,
-  // Phase 5 composite: ONE budget for the whole bundle (+ header allowance).
+  // Composite answer — source, callers, callees, types, tests, blast radius —
+  // so ONE budget covers every section (+ header allowance).
   context_bundle: 950,
-  // Phase 6 evidence bundle: two spans + evidence under one budget.
+  // Returns BOTH implementation spans plus the differing evidence, under one budget.
   compare_implementations: 950,
-  // Phase 6 step 1 projections (PHASE6-COMPLETION-PLAN section 4).
+  // Single-question graph projections: outbound call edges, module imports in
+  // each direction, and the tests that exercise a target.
   callees_of: 500,
   dependencies_of: 400,
   dependents_of: 400,
   tests_for: 500,
-  // C5 — the largest surface in the product (plan section 4).
+  // Widest response of any tool here — changed files and symbols vs HEAD,
+  // boundary violations the diff introduced, blast radius, tests — hence the
+  // largest budget. It reports observed evidence, never a verdict on the change.
   check_my_changes: 1200,
   boundary_check: 500,
   diff_context: 950,

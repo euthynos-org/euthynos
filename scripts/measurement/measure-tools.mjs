@@ -6,14 +6,14 @@
 // anyway:
 //
 //   1. It performs NO filesystem mutation. Every row it produced was a
-//      repeated warm call, yet SUPPORTED-SCALE.md labelled those rows
+//      repeated warm call, yet ../../docs/SUPPORTED-SCALE.md labelled those rows
 //      "after edit" and stated the tables "re-edit a file before every call
 //      on purpose". Git history confirms this file never contained a write.
 //   2. `at(0.95)` on 9 samples resolves to a[8] - the MAXIMUM. The column
 //      published as "p95" is a max. It also ran REPS = 9 while every
 //      published document said 7 repetitions.
 //
-// Kept for provenance only. See BENCHMARK-INTEGRITY-AUDIT.md.
+// Kept for provenance only. See ../../docs/BENCHMARK-INTEGRITY-AUDIT.md.
 // ============================================================================
 
 // G5 acceptance harness: END-TO-END tool latency (median + p95) at three

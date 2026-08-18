@@ -12,9 +12,13 @@ import { BUNDLE_BUDGET_TOKENS, BUNDLE_INTENTS, INTENT_PROFILES } from '../src/se
 import { handleMessage } from '../src/mcp/server.js';
 
 /**
- * Phase 5 surface: context_bundle, session dedup, and the resources/prompts
- * protocol additions — the pieces that attack M1's named residual (correct
- * answers followed by Read x26 / Grep x22 of re-assembly and re-verification).
+ * Covers the three surfaces aimed at the re-assembly work that follows an
+ * answer: context_bundle (source, callers, types, tests, architecture and
+ * blast radius composed in one call), session dedup (a short receipt in place
+ * of bytes this session was already served and that have not changed), and the
+ * resources/prompts MCP protocol additions. The behaviour they answer to: in
+ * the benchmark runs behind this work, a correct answer was still trailed by
+ * ~26 file reads and ~22 greps spent re-assembling and re-verifying context.
  */
 
 let REPO: string;

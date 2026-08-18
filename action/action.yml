@@ -1,4 +1,6 @@
-# Euthynos composite action (Slice 2).
+# Euthynos composite action: runs the architecture scan over a
+# consumer repository's checkout and posts the resulting report back
+# as a sticky pull request comment.
 #
 # This file lives in action/, one level BELOW the action repo root that
 # holds package.json and src/. Every run step therefore works inside

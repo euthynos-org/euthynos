@@ -8,16 +8,17 @@ import { INTENT_RULES } from '../src/query/intent.js';
 import { resetVocabularyCache, shapeQuery } from '../src/query/shape.js';
 
 /**
- * THE PHASE 4 GATE.
+ * THE RELEASE GATE FOR `query_repository`.
  *
- * The blueprint is explicit: `query_repository` is not exposed over MCP at all
- * until the shaper clears 90% intent accuracy on this set, "a wrong router
- * poisons trust — the bench proved trust is the whole game". This file IS that
- * gate, and it keeps holding after the tool ships.
+ * `query_repository` is not exposed over MCP at all until the query shaper
+ * clears 90% intent accuracy on this set. A router that picks the wrong intent
+ * still answers — confidently, about the wrong thing — which costs more trust
+ * than declining to answer at all. This file IS that gate, and it keeps holding
+ * after the tool ships.
  *
  * The golden set lives in JSON so it can grow from real transcripts without
- * touching code, and `scripts/shaper-bench.mjs` prints the full §41 metric
- * table from the same file — one source of truth for the number.
+ * touching code, and `scripts/shaper-bench.mjs` prints the full metric table
+ * from the same file — one source of truth for the number.
  */
 
 interface GoldenCase {
@@ -218,8 +219,8 @@ describe('repository vocabulary does the bridging', () => {
   it('a query acronym finds code whose words are only spelled out in prose', () => {
     // The sharp version: the letters j-w-t appear NOWHERE in this repo —
     // not in an identifier, not in a comment. Only the phrase "JSON Web
-    // Token" does. Resolving this is the §19 bridge doing real work, not a
-    // substring match getting lucky.
+    // Token" does. Resolving this is the vocabulary's acronym-to-expansion
+    // bridge doing real work, not a substring match getting lucky.
     const src = `// Checks a JSON Web Token against the signing key.
 export function checkSignature(raw: string): boolean {
   return raw.length > 0

@@ -2,7 +2,11 @@ import type { ScanReport } from '../types.js';
 
 /**
  * PR comment body — the exact format promised on the landing page.
- * The GitHub Action (Slice 2) posts this verbatim.
+ * The GitHub Action posts the returned string verbatim, so what is assembled
+ * here is what a reviewer sees: a score heading, one badge chip per metric,
+ * then only the sections that have content — deepening opportunities, at most
+ * three similar-logic findings, and modules whose ownership risk scores
+ * below 40.
  */
 export function renderMarkdown(r: ScanReport): string {
   const a = r.averages;

@@ -264,7 +264,7 @@ export interface ModuleReport {
   evidence?: ModuleEvidence;
 }
 
-// ── Code knowledge graph (slice 6) ──────────────────────────────────────────
+// ── Code knowledge graph: nodes, edges, call adjacency ──────────────────────
 
 export interface CodeNode {
   id: string;
@@ -277,7 +277,12 @@ export interface CodeNode {
   /** Module-level metrics, attached to module nodes when a scan supplies them. */
   metrics?: { depth: number | null; seams: number | null; leverage: number | null; locality: number | null };
   owner?: string | null;
-  /** Bus factor on module nodes (structured ownership, F1). */
+  /**
+   * Bus factor for the module — the author count from the scan's ownership
+   * stats, carried as a number rather than re-parsed out of a detail string.
+   * Set on module nodes only; null when the scan supplied no ownership data
+   * (no git history).
+   */
   busFactor?: number | null;
 }
 

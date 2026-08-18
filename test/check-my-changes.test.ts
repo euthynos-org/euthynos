@@ -7,8 +7,8 @@ import { callTool } from '../src/mcp/tools.js';
 import { resetDedup } from '../src/mcp/dedup.js';
 
 /**
- * Phase 6 Step 4 — check_my_changes (plan C5). The two non-negotiables,
- * pinned harder than anything else here:
+ * check_my_changes — reports what a diff touched and what it did NOT cover.
+ * These tests pin the two properties of its output that matter most:
  *  1. It NEVER asserts safety — no "safe", no "isolated" as facts; the
  *     closing line hands the judgment to the agent.
  *  2. Boundary findings are NEWLY-INTRODUCED only, with the pre-existing

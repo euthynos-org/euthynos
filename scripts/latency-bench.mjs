@@ -18,7 +18,7 @@
 // docs, site, feed and release notes found zero references - so it invalidated
 // no shipped claim. It is disabled to keep it that way.
 //
-// Kept for provenance only. See BENCHMARK-INTEGRITY-AUDIT.md.
+// Kept for provenance only. See ../docs/BENCHMARK-INTEGRITY-AUDIT.md.
 // ============================================================================
 
 /**
@@ -67,9 +67,11 @@ const buildInfoPath = join(here, '..', 'dist', 'build-info.json');
 const buildInfo = existsSync(buildInfoPath) ? JSON.parse(readFileSync(buildInfoPath, 'utf8')) : null;
 const subjectCommit = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 
-// Fixed, deterministic call list — the M2-relevant read path plus the
-// Phase 6 edit-loop surface. Arguments are pinned to real hono symbols so
-// every future run measures the same work.
+// Fixed, deterministic call list — the read/navigation path the M2
+// token/recall benchmark leans on (repo_map, symbol lookup, callers/callees,
+// references, tests, context_bundle) plus the post-edit review tools
+// (boundary_check, check_my_changes). Arguments are pinned to real hono
+// symbols so every future run measures the same work.
 const CALLS = [
   ['repo_map', { path: repo }],
   ['find_symbol', { path: repo, name: 'compose' }],

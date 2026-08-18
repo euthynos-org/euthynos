@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import { callTool } from '../src/mcp/tools.js';
 
 /**
- * Phase 6 Step 5 — the compositions (plan C6/C7/C8). Thin projections of
- * D0 + existing machinery; what is pinned here is their HONESTY shape:
- * scoped negatives, named omissions, stated boundaries, no safety claims.
+ * The three diff-scoped composition tools — boundary_check, diff_context and
+ * change_impact. Each is a thin projection of the git diff engine over the
+ * existing index rather than fresh analysis, so what these tests pin is not the
+ * analysis but the HONESTY shape of the answers: scoped negatives, named
+ * omissions, stated boundaries, no safety claims.
  */
 
 function g(dir: string, ...args: string[]): string {

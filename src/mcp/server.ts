@@ -1,5 +1,6 @@
 /**
- * Euthynos MCP stdio server (Slice 2.5).
+ * Euthynos MCP stdio server — the JSON-RPC entry point that exposes the
+ * repository index (tools, resources, prompts) to an MCP client.
  *
  * Hand-rolled JSON-RPC 2.0 over newline-delimited stdin/stdout — zero new
  * dependencies, no @modelcontextprotocol/sdk. One JSON message per line.
@@ -32,13 +33,13 @@ const PKG_VERSION = ((): string => {
 })();
 const SERVER_INFO = { name: 'euthynos', version: PKG_VERSION };
 
-// TIMEOUT / CONCURRENCY CONTRACT (documented, launch-readiness §4.10):
+// TIMEOUT / CONCURRENCY CONTRACT — what a caller can and cannot rely on:
 // dispatch is SYNCHRONOUS on the stdio readline loop — one tool call at a
 // time, queued in arrival order; a cold first scan of a large repository
 // blocks the queue for its whole duration, and that duration grows with
-// repository size (see SUPPORTED-SCALE.md for the validated envelope; above
+// repository size (see ../../docs/SUPPORTED-SCALE.md for the validated envelope; above
 // ~10,000 files is not validated. V1 publishes no precise latency figures —
-// see PROVENANCE.md). There is no per-call timeout and
+// see ../../docs/PROVENANCE.md). There is no per-call timeout and
 // $/cancelRequest is not implemented; only git subprocesses carry their own
 // 120s cap. MCP clients apply their own request timeouts on top.
 
@@ -89,8 +90,9 @@ export function handleMessage(line: string): string | null {
           // Resources and prompts are PULL-ONLY: reads go through getIndex()
           // so they are always working-tree-fresh, but there are NO update
           // notifications (`subscribe`/`listChanged` deliberately absent) —
-          // pushing them would need a filesystem watcher, which ADR-002
-          // rejected for Windows reliability. Recorded as deviation D7.
+          // pushing them would need a filesystem watcher, which this project
+          // rejected for Windows reliability. A client therefore learns about
+          // post-edit state only by re-reading; nothing here tells it when to.
           capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: SERVER_INFO,
           // Shown to the agent by MCP clients. This is a WORKFLOW, not a
@@ -278,7 +280,7 @@ function asObject(v: unknown): Record<string, unknown> {
 
 /** Run the MCP server over the current process's stdio until stdin closes. */
 export async function startMcpServer(): Promise<void> {
-  // Servable roots are PINNED at startup (launch-readiness §4.7): the cwd
+  // Servable roots are PINNED at startup: the cwd
   // the client launched us with, plus any explicitly configured extras
   // (EUTHYNOS_ROOTS, path-list separated by ';'). Without this, any
   // readable directory on the machine was servable per tool call — the

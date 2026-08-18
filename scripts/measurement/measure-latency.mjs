@@ -1,7 +1,7 @@
 /**
  * Authoritative latency harness. Supersedes measure-tools.mjs and
  * measure-scale.mjs, both of which produced numbers that cannot be reproduced
- * from a valid operation (see BENCHMARK-INTEGRITY-AUDIT.md).
+ * from a valid operation (see ../../docs/BENCHMARK-INTEGRITY-AUDIT.md).
  *
  *   node --expose-gc scripts/measurement/measure-latency.mjs [--scales=1500,5000] [--reps=20]
  *

@@ -2,7 +2,8 @@ import type { ParsedFile } from '../types.js';
 import { resolvesTo } from './bundle.js';
 
 /**
- * Phase 6 C4 — tests_for evidence (PHASE6-COMPLETION-PLAN §1/§5).
+ * tests_for — which test files reach a given file or symbol, and by which
+ * route each one was found.
  *
  * Three ROUTES, each labeled on every hit, because they carry different
  * trust: an import edge is structural, a name convention is convention,
@@ -13,8 +14,9 @@ import { resolvesTo } from './bundle.js';
  * the tool's empty answer says so verbatim.
  *
  * Deliberately reads the parsed TEST files' own call arrays rather than
- * the main call graph: test files are excluded from the graph by design
- * (precision decisions frozen), and this keeps it that way.
+ * the main call graph: test files are excluded from that graph by design,
+ * so that graph's edges describe production code only. Reading the test
+ * files directly here keeps that exclusion intact.
  */
 
 export type TestRoute = 'import-edge' | 'name-convention' | 'test-call';

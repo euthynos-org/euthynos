@@ -90,7 +90,7 @@ LINES = [
     [("   no cross-module duplicate logic detected", FG3)],
     [("", FG)],
     # No wall-clock figure here: V1 publishes no precise latency numbers
-    # (see PROVENANCE.md), and this frame is a rendered image, so a stale
+    # (see ../docs/PROVENANCE.md), and this frame is a rendered image, so a stale
     # figure baked in here would survive every text-based claims scan.
     [("  scan complete", FG3)],
 ]

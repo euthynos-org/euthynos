@@ -12,7 +12,8 @@ import { acronymOf, splitIdentifier, STOPWORDS } from './tokenize.js';
  *
  *  1. Extracted at PARSE time and stored on ParsedFile, so it persists in the
  *     index and costs nothing on a warm sweep. Harvesting comments by re-reading
- *     files per query would give back the whole Phase 3 speedup.
+ *     files per query would put file I/O back on the query path and give back
+ *     the speedup that serving queries from a warm index exists to provide.
  *  2. Used ONLY for lexical ranking. A comment never creates a symbol, never
  *     resolves a target on its own, and never produces a line number. So the
  *     scanner below is allowed to be approximate — a `#` inside a C string
@@ -71,11 +72,12 @@ export function commentTokens(lang: string, text: string): string[] | undefined 
     out.push(tok);
   };
   const push = (raw: string): void => {
-    // The acronym a reader would use for a proper-noun phrase. This is the
-    // §19 bridge: a comment saying "JSON Web Token" is why a query for "JWT"
-    // can find code whose identifiers never contain those three letters. It
-    // is evidence from THIS repository's prose, not a general abbreviation
-    // dictionary — we never invent an expansion nobody here wrote.
+    // The acronym a reader would use for a proper-noun phrase. This is what
+    // bridges query wording to code wording: a comment saying "JSON Web Token"
+    // is why a query for "JWT" can find code whose identifiers never contain
+    // those three letters. It is evidence from THIS repository's prose, not a
+    // general abbreviation dictionary — we never invent an expansion nobody
+    // here wrote.
     for (const phrase of raw.matchAll(PROPER_PHRASE)) {
       const acr = acronymOf(splitIdentifier(phrase[0]));
       if (acr !== null && acr.length >= 2) emit(acr);

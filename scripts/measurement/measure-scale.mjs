@@ -14,7 +14,7 @@
 // find_references was never measured here at all, though the same sentence
 // claimed a figure for it.
 //
-// Kept for provenance only. See BENCHMARK-INTEGRITY-AUDIT.md.
+// Kept for provenance only. See ../../docs/BENCHMARK-INTEGRITY-AUDIT.md.
 // ============================================================================
 
 // Scale measurement against the SHIPPED engine (dist). Read-only: calls

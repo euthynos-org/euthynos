@@ -19,7 +19,7 @@ derived from one.
 > **The frozen M2 evidence was not touched.** No answer key, preregistration,
 > result, ledger row or session artifact was modified during this audit. The
 > preregistration and the results are published unmodified in
-> [`research/`](research/); the answer keys and session ledger are not, so
+> [`research/`](../research/); the answer keys and session ledger are not, so
 > nothing in this document asks you to take a private hash on trust.
 
 ---

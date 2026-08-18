@@ -6,7 +6,7 @@ import { runGitLog } from '../git/run.js';
 import type { RenderSection } from './render.js';
 
 /**
- * CONTEXT BUNDLE (Phase 5, blueprint §21-22).
+ * CONTEXT BUNDLE — the whole picture around one symbol, in a single call.
  *
  * One call that assembles what an agent otherwise collects piecewise — the
  * span, who calls it, what it calls, the types in its signature, the tests
@@ -14,10 +14,10 @@ import type { RenderSection } from './render.js';
  * how far a change would ripple — RANKED BY INTENT and rendered under one
  * budget by the shared renderer.
  *
- * M1 named the residual this exists to remove: agents received a correct
- * callers_of answer and then spent Read x26 / Grep x22 assembling the rest of
- * the picture by hand. The bundle's job is to make the assembled picture the
- * FIRST answer.
+ * Benchmark runs named the residual this exists to remove: agents received a
+ * correct callers_of answer and then spent Read x26 / Grep x22 assembling the
+ * rest of the picture by hand. The bundle's job is to make the assembled
+ * picture the FIRST answer.
  *
  * Composition rules:
  *  - Everything comes from machinery that already exists (spans, graph,
@@ -159,8 +159,8 @@ function callerSection(d: BundleDeps, dir: 'callers' | 'callees'): RenderSection
     nextAction:
       dir === 'callers'
         ? `callers_of({ function: "${qualified(d.target)}" })`
-        // There is no callees_of tool until Phase 6, and impact_of serves
-        // CALLERS — pointing there for hidden callees was a wrong escalation
+        // No callees_of tool exists yet, and impact_of walks CALLERS, not
+        // callees — pointing there for hidden callees was a wrong escalation
         // (review finding). The honest deeper call is the source itself:
         // read_function's footer lists the direct calls.
         : `read_function({ function: "${qualified(d.target)}" })`,
@@ -237,8 +237,11 @@ function resolveTypeSpan(
 
 /**
  * Tests that import the target's file — labeled as the heuristic it is.
- * tests.json (call-edge-aware) is Phase 6; overstating this section today
- * would poison the one Phase 6 exists to make trustworthy.
+ * A call-edge-aware test index does not exist yet, so this section reports
+ * import edges only: a test that reaches the target through a helper is
+ * missed, and a test that imports the file without exercising the target is
+ * still listed. Overstating the section today would discredit the stronger
+ * signal a call-edge index is meant to provide.
  */
 function testsSection(d: BundleDeps): RenderSection {
   const targetPath = d.target.file;
@@ -261,7 +264,7 @@ function testsSection(d: BundleDeps): RenderSection {
   const shown = hits.slice(0, 4);
   const lines = shown.length > 0 ? shown : ['no test file imports this file.'];
   if (hits.length > shown.length) lines.push(`... and ${hits.length - shown.length} more`);
-  lines.push('(heuristic: test-file import edges; call-graph-aware tests_for lands in Phase 6)');
+  lines.push('(heuristic: test-file import edges — not call-graph-aware, so this is a lower bound. Use tests_for for route-labelled evidence.)');
   return { title: 'tests', lines, nextAction: '' };
 }
 

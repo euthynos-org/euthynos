@@ -102,7 +102,7 @@ describe('tools/list', () => {
       'module_metrics',
       'path_between',
       'similar_logic_exists',
-      // P0 source tools (object questions — "show me the code")
+      // source tools (object questions — "show me the code")
       'file_outline',
       'find_references',
       'find_symbol',
@@ -111,11 +111,15 @@ describe('tools/list', () => {
       'repo_map',
       // router (plain-language questions) — gated on the shaper golden set
       'query_repository',
-      // Phase 5 composite — one call for the whole working context
+      // composite — one call returns a symbol's source, callers, callees,
+      // types, tests and blast radius as a single budgeted answer
       'context_bundle',
-      // Phase 6 — canonical-decision evidence (never the decision)
+      // side-by-side evidence for choosing between two implementations:
+      // what differs, plus caller and test counts for each. It reports the
+      // evidence; which copy becomes canonical stays the caller's decision.
       'compare_implementations',
-      // Phase 6 step 1 — graph projections (PHASE6-COMPLETION-PLAN C1-C3)
+      // graph projections (call, import and test edges) and diff-scoped
+      // queries over what the current working tree changed
       'callees_of',
       'dependencies_of',
       'dependents_of',

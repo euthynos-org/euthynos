@@ -82,7 +82,7 @@ if (provenance === 'PUBLIC') {
               `that source commit is not part of this public repository.`);
   console.log('  The checks below are self-contained: they re-derive every published');
   console.log('  figure from the raw samples in the artifact. What cannot be checked');
-  console.log('  here is that the build matches that commit — see PROVENANCE.md.');
+  console.log('  here is that the build matches that commit — see ../../docs/PROVENANCE.md.');
 }
 
 // ---- [5] raw samples reproduce every statistic ----------------------------
@@ -162,7 +162,7 @@ if (fail === 0) {
   if (provenance === 'EXTERNAL') {
     console.log('The artifact verifies against itself: every published figure was re-derived');
     console.log('from its raw samples here. The link to its source commit is asserted by the');
-    console.log('maintainers, not proven in this repository. See PROVENANCE.md.');
+    console.log('maintainers, not proven in this repository. See ../../docs/PROVENANCE.md.');
   }
 } else {
   console.log(`\n${fail} CHECK(S) FAILED  ·  provenance: ${provenance}`);

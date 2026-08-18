@@ -36,7 +36,7 @@ anyone, and no separate agreement is needed to merge your work.
 What we do ask for is a **sign-off**: one line per commit certifying the
 [Developer Certificate of Origin 1.1](https://developercertificate.org) — that
 you wrote the code, or otherwise have the right to submit it under Apache-2.0.
-The full text is in [DCO](DCO) so you can read what you are certifying without
+The full text is in [DCO](../DCO) so you can read what you are certifying without
 leaving the repository. Git adds the line for you:
 
 ```

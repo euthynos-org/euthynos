@@ -4,11 +4,16 @@ const CODE_EXT = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|java|go|rs|cs|rb|php)$/;
 const MARKER = '__C__';
 
 /**
- * Author concentration analysis (pillars 11+12):
+ * Author concentration analysis — how narrowly a module's history is held:
  * for every commit in the window, who wrote it and which modules it touched.
  * From that, per module: commits per author, the dominant author, and the
  * bus factor — the minimum number of authors whose commits cover >=80% of
  * the module's commits.
+ *
+ * Counting is per commit, not per line: a commit counts once for each module
+ * it touched however much it changed there, and a commit that changed no file
+ * with a recognized code extension is skipped entirely. So these numbers
+ * describe who has been committing, not who understands the code.
  *
  * moduleOf is injected so this module stays a leaf (same rule as history.ts —
  * importing discover.ts here creates a runtime cycle our own scanner flags).

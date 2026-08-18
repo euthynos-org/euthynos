@@ -9,11 +9,12 @@ import { getIndex } from '../src/index/incremental.js';
 import type { ParsedFile } from '../src/types.js';
 
 /**
- * D0 — the diff engine, tested standalone BEFORE any tool consumes it
- * (PHASE6-COMPLETION-PLAN step 3). Covers the git edge cases the plan
- * names: modify/add/delete/rename/untracked, no-git, no-commits, detached
- * HEAD, CRLF, binary skip, containment, blob-cache, and the equivalence
- * pin (old-blob parse == disk parse for identical content).
+ * The diff engine (deviation id D0), exercised standalone BEFORE any tool
+ * consumes it, so a regression shows up here rather than inside a tool's
+ * output. Covers the git edge cases the engine has to survive:
+ * modify/add/delete/rename/untracked, no-git, no-commits, detached HEAD,
+ * CRLF, binary skip, containment, blob-cache, and the equivalence pin
+ * (old-blob parse == disk parse for identical content).
  */
 
 function g(dir: string, ...args: string[]): string {

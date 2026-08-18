@@ -5,9 +5,13 @@ import { join } from 'node:path';
 import { callTool } from '../src/mcp/tools.js';
 
 /**
- * Phase 6 Step 2 — tests_for (plan C4). The contract pinned before use:
- * three labeled routes, ambiguity answered not guessed, and an empty
- * answer that names its routes and never claims the code is untested.
+ * tests_for — which tests exercise a file or symbol, as route-labeled evidence.
+ *
+ * These cases pin the contract the tool answers under: three discovery routes,
+ * each hit tagged with the route that found it — (1) import-edge, (2)
+ * name-convention, (3) test-call — an ambiguous target answered with the list
+ * of candidate declarations instead of a guess, and an empty result that names
+ * the three routes it searched rather than claiming the code is untested.
  */
 
 let repo: string;

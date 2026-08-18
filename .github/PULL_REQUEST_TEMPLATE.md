@@ -8,11 +8,11 @@
 - [ ] `npm test` passes (685 tests)
 - [ ] `npx tsc --noEmit` is clean
 - [ ] No test was weakened to make this pass
-- [ ] No tool output claims more than it can support (see CONTRIBUTING.md)
+- [ ] No tool output claims more than it can support (see ../docs/CONTRIBUTING.md)
 
 ## If this touches measurement
 
 - [ ] `node scripts/measurement/audit-harness-args.mjs` exits 0 for any harness I changed
 - [ ] Any new performance figure is reproducible from a valid, schema-checked,
       fail-closed run and states its methodology, machine and sample count
-- [ ] I have read `BENCHMARK-INTEGRITY-AUDIT.md`
+- [ ] I have read `../docs/BENCHMARK-INTEGRITY-AUDIT.md`
