@@ -1,7 +1,30 @@
-# Euthynos
+<p align="center">
+  <img src="assets/euthynos-logo.svg" alt="Euthynos" width="360">
+</p>
 
-**A local, read-only MCP server that gives AI coding agents structural evidence
-about your repository — and names the boundary of every answer.**
+<p align="center">
+  <strong>A local, read-only MCP server that gives AI coding agents structural
+  evidence about your repository — and names the boundary of every answer.</strong>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/euthynos"><img alt="npm" src="https://img.shields.io/npm/v/euthynos?color=0BABB4&label=npm"></a>
+  <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A518-0BABB4">
+  <img alt="tests" src="https://img.shields.io/badge/tests-685%20passing-0BABB4">
+  <img alt="tools" src="https://img.shields.io/badge/MCP%20tools-23-0BABB4">
+  <img alt="languages" src="https://img.shields.io/badge/languages-16-0BABB4">
+  <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-0BABB4"></a>
+</p>
+
+<p align="center">
+  <a href="https://euthynos.dev">euthynos.dev</a> ·
+  <a href="#the-23-tools-by-the-question-they-answer">Tools</a> ·
+  <a href="#measured-not-asserted">Benchmark</a> ·
+  <a href="#verify-the-claims-yourself">Verify it yourself</a> ·
+  <a href="#what-euthynos-does-not-claim">What it won't claim</a>
+</p>
+
+---
 
 An agent reading a file can see what that file depends on. It cannot see what
 depends on *the file*. Inbound edges are invisible from the inside, so agents
@@ -11,21 +34,58 @@ instead — **zero LLM calls**, no network in the query path.
 
 It provides evidence. **It does not certify that a change is safe.**
 
+## Install
+
+**Install globally.** The `-g` matters: it is what puts the `euthynos` command on
+your PATH, which is how your MCP client starts the server.
+
 ```bash
 npm install -g euthynos
 ```
+
+Check it landed before wiring anything up:
+
+```bash
+euthynos --help
+```
+
+Then register it with your agent:
 
 ```bash
 claude mcp add euthynos -- euthynos mcp
 ```
 
-Or in an MCP client config:
+Or in any MCP client config:
 
 ```json
 { "mcpServers": { "euthynos": { "command": "euthynos", "args": ["mcp"] } } }
 ```
 
 Requires Node.js 18+. Works on Windows, macOS and Linux.
+
+<details>
+<summary><strong>“euthynos is not recognized” / “Failed to connect — Connection closed”</strong></summary>
+
+Almost always a **local install instead of a global one**. `npm install euthynos`
+without `-g` drops the binary in `./node_modules/.bin/`, which is not on your
+PATH, so your MCP client has nothing to run. Confirm with:
+
+```bash
+npm ls -g euthynos --depth=0
+```
+
+If that prints `(empty)`, reinstall with `-g`. To clean up the accidental local
+copy, delete the `node_modules` folder and `package.json` it created in whatever
+directory you ran the command from.
+
+If it *is* installed globally and still not found, your npm global bin directory
+is not on PATH — `npm config get prefix` shows where it lives. Or point your
+client at the binary directly:
+
+```json
+{ "mcpServers": { "euthynos": { "command": "C:\\full\\path\\to\\euthynos.cmd", "args": ["mcp"] } } }
+```
+</details>
 
 <p align="center">
   <img src="assets/scan-demo.gif" alt="euthynos scan running against the hono repository: 382 files, 13 modules, Architecture Health 68 of 100, per-module table of depth, seams, leverage and callers, and a contamination score" width="900">
@@ -47,6 +107,41 @@ Requires Node.js 18+. Works on Windows, macOS and Linux.
 
 Every answer states its own scope. A negative answer says what was *not*
 examined rather than implying nothing exists.
+
+## Measured, not asserted
+
+**M2** is a preregistered benchmark: the tasks, validity rules and answer keys
+were frozen by commit *before any session ran*, recall was hand-graded blind from
+final answers only, and the invalid sessions are published alongside the valid
+ones. Same model, same repository, same prompts — one arm with Euthynos mounted,
+one without.
+
+On the three tasks that reached full measurement:
+
+| task | arm | fresh tokens | recall vs frozen key | false positives |
+|---|---|---:|:---:|:---:|
+| **who calls this** | baseline | 70,878 | 12 / 12 | 1 |
+| | **Euthynos** | **49,476** &nbsp;`−30%` | **12 / 12** | **0** |
+| **is this logic duplicated** | baseline | 33,429 | 15 / 15 | 0 |
+| | **Euthynos** | **29,120** &nbsp;`−13%` | **15 / 15** | **0** |
+| **what does this change reach** | baseline | 56,481 | 15 / 15 | 0 |
+| | **Euthynos** | **39,242** &nbsp;`−31%` | **15 / 15** | **0** |
+
+**Recall was identical and perfect in both arms — 42 of 42 required items each —
+while the Euthynos arm used 13–31% fewer fresh tokens.** The agent reached the
+same answer having read less. A preregistered trap designed to induce a plausible
+wrong caller did not fire in either arm.
+
+**What this does not say.** 21 of 46 attempted sessions were valid; an external
+rate-limit wall took 14 of them. **Guided-edit and orientation tasks were never
+measured** and no number is implied for them. One harness, one repository. This
+is work saved, not answer quality improved — and we would rather publish that
+sentence than a bigger number.
+
+**No latency figures are published.** Two internally valid measurements
+disagreed and the controlled experiment that would have settled it could not be
+completed, so we publish neither and ship the harness instead —
+[PROVENANCE.md](PROVENANCE.md) has the reasoning.
 
 ## Local-first
 
@@ -160,6 +255,37 @@ broke, what was invalidated, what was re-measured, and what remains unsupported.
 statement about those is unverified from this repository, and we would rather say
 so than imply otherwise.
 
+## The same engine, for a team — in development
+
+> **Not yet available.** There is no hosted instance and no sign-up today. This
+> section describes software that exists and runs, so you know where the project
+> is going — not a product you can buy. When it opens, it will be announced at
+> [euthynos.dev](https://euthynos.dev).
+
+The engine in this repository also drives a team platform. A repository is
+connected through a GitHub App; every push and pull request is scanned
+server-side, and the result lands where the decision gets made:
+
+- **A merge policy you write as rules** — *health may not fall more than N
+  points*, *no new duplication*, *a module needs more than one owner* — each set
+  to warn or block. Thresholds are enforced by the server, not the form.
+- **A GitHub check run on every pull request**, with the verdict recorded
+  against the rule that produced it.
+- **An interactive dependency graph** per scan, generated by the same engine
+  you can run locally.
+- **Architecture health over time**, per module, with ownership and bus factor
+  from git history.
+- **An evidence export an auditor can read** — the rule set as it stood, every
+  merge verdict in a date range, and each override with its actor and written
+  reason.
+
+**Zero LLM calls here too.** The same diff produces the same verdict, every time.
+Nothing is sampled, so there is nothing to hallucinate and nothing to
+prompt-inject.
+
+The CLI in this repository stays free, local and Apache-2.0. It does not phone
+the platform, and the platform never touches your machine.
+
 ## CLI
 
 The MCP server is the main surface, but the CLI stands alone:
@@ -195,3 +321,12 @@ Copyright © 2026 Tonil Kumar.
 The licence covers the code. It does not cover the name: "Euthynos" is claimed as
 an **unregistered** trademark of Tonil Kumar — no registration has been applied
 for or granted. See [TRADEMARK.md](TRADEMARK.md).
+
+---
+
+<p align="center">
+  <img src="assets/euthynos-symbol.svg" alt="" width="28"><br>
+  <a href="https://euthynos.dev"><strong>euthynos.dev</strong></a><br>
+  <sub>Named for the <em>euthynoi</em> — the magistrates of classical Athens who
+  audited every official at the end of their term.</sub>
+</p>

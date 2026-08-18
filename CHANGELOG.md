@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.2 — 2026-08-18
+
+Documentation only. No engine change; `dist/` behaviour, the 23 tools and their
+schemas are unchanged from 0.1.0.
+
+- **README rewritten** with the project mark, an at-a-glance badge row, and the
+  M2 benchmark presented as a table — the per-task fresh-token medians and the
+  42-of-42 recall result, quoted from `research/M2-RESULTS.md` and matching it
+  figure for figure, with the validity caveats kept next to the numbers rather
+  than in a footnote.
+- **Added a section on the team platform the same engine drives**, marked
+  explicitly as *not yet available* — no hosted instance and no sign-up exists
+  today, and the section says so before describing anything.
+- **Install section rewritten.** The global flag is now called out
+  explicitly, with a verification step and a troubleshooting block for the
+  most common failure: a local `npm install euthynos` leaves no command on
+  PATH, so an MCP client reports only *Failed to connect — Connection
+  closed*, which does not point at the cause.
+- No comparative claim against any other tool: no head-to-head benchmark has
+  been run, so none is stated.
+
 ## 0.1.1 — 2026-08-18
 
 Packaging only. No engine change: `dist/` is byte-identical in behaviour to

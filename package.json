@@ -1,6 +1,6 @@
 {
   "name": "euthynos",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Euthynos — deterministic repository intelligence for AI coding agents (MCP server): exact source spans, call graphs, clone detection, honest evidence boundaries.",
   "type": "module",
   "license": "Apache-2.0",
