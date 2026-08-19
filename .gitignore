@@ -9,6 +9,16 @@ dashboard-preview.html
 bench-results/
 .euthynos/
 
+# Scan artifacts written into the repo root by --json / --md. These are scratch
+# output, but `scripts/stamp-build.mjs` treats ANY untracked file as a dirty
+# tree, so leaving one here stamps the release `<commit>-dirty` and costs the
+# build its reproducible provenance. 0.1.4 shipped that way because of a stray
+# base.json.
+base.json
+head.json
+euthynos-report.json
+euthynos-report.md
+
 # Internal — not part of the engine release
 landing-page/
 scripts/experiments/
