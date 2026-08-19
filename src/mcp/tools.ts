@@ -1634,7 +1634,13 @@ function pathBetweenTool(args: Record<string, unknown>): ToolResult {
     return {
       text: `No call path between ${ra.node.label} and ${rb.node.label} in the static call graph (dynamic-dispatch edges are invisible — absence of a static path does not prove the two never interact at runtime).`,
     };
-  return { text: `Call path (${path.length} hops):\n  ${path.map((n) => n.label).join(' → ')}` };
+  // A hop is an EDGE, not a node: `a → b` is one call, not two. `path` holds
+  // nodes, so the edge count is one less. Reporting the node count here
+  // overstated every distance an agent reasons about.
+  const hops = path.length - 1;
+  return {
+    text: `Call path (${hops} ${hops === 1 ? 'hop' : 'hops'}):\n  ${path.map((n) => n.label).join(' → ')}`,
+  };
 }
 
 // ── query_repository (plain-language router) ───────────────────────────────

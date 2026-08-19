@@ -103,7 +103,9 @@ function printPath(graph: CodeGraph, spec: string): void {
   if (!path) {
     console.log(pc.dim(`  no call path between ${ra.node.label} and ${rb.node.label}`));
   } else {
-    console.log(`  ${pc.bold('Call path')} ${pc.dim(`(${path.length} hops)`)}`);
+    // Hops are edges, not nodes — see the same correction in mcp/tools.ts.
+    const hops = path.length - 1;
+    console.log(`  ${pc.bold('Call path')} ${pc.dim(`(${hops} ${hops === 1 ? 'hop' : 'hops'})`)}`);
     console.log('   ' + path.map((n) => pc.bold(n.label)).join(pc.dim(' → ')));
   }
   console.log('');

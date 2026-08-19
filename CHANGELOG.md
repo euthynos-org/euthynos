@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.1.4 — 2026-08-20
+
+Three correctness fixes, all found by running the CLI against this repository
+rather than by reading it. Each shipped in 0.1.3 because no test asserted it.
+
+- **An unscannable root no longer scores 100/100.** `euthynos scan
+  /path/that/does/not/exist` reported `Architecture Health 100/100 [Strong]`:
+  zero files discovered means zero problems detected, so a mistyped path
+  produced the best possible result. `policy --strict` inherited it and printed
+  "all architecture policies passed" with exit 0, so a misconfigured CI gate
+  went green precisely because it had measured nothing. `scan()` now throws when
+  the root is missing or is not a directory, and every command built on it —
+  `scan`, `policy`, `alerts`, `graph`, `dashboard` — fails closed with exit 1.
+- **Call paths reported the node count, not the hop count.** A direct `a → b`
+  call was described as "2 hops". This was wrong in the `graph --path` CLI output
+  and in the `path_between` MCP tool, so agents reasoning about call distance
+  received a value one too high. Both now count edges, and render "1 hop"
+  correctly in the singular.
+- **`policy --strict` documented as a CI gate that could never fail.** The
+  built-in ratchet policy is warn-only, and `--strict` exits non-zero only on a
+  block-mode violation, so the default invocation could not fail — verified
+  against a synthetic 50-point health regression, which still exited 0. The flag
+  that arms it, `--block`, was absent from the help text, the README and the
+  docs, while `--ratchet` was documented as "fail only on regressions" but was
+  never read by `loadPolicy()`. The help now documents `--block`, drops the dead
+  `--ratchet`, and states both working gate recipes:
+  `policy --block --base prior.json --strict`, or `policy --policy rules.json
+  --strict` with `"defaultMode": "block"` in the file. Behaviour is unchanged —
+  observe-first remains the default; only the documentation was wrong.
+
+No change to the 23 tools, their schemas, or the scoring model. `alerts` still
+always exits 0 by design: alerts inform, the policy gate enforces.
+
 ## 0.1.3 — 2026-08-19
 
 Documentation and comments only. No engine change: `dist/` behaviour, the 23

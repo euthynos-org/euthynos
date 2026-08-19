@@ -79,11 +79,18 @@ Usage:
                                     dashboard (metric-aware knowledge graph)
     --out <file>                    output path (default .euthynos/dashboard.html)
   euthynos policy [path]          enforce an architecture policy (budgets/gate)
-    --policy <file.json>            rules to enforce
-    --ratchet                       freeze today's numbers, fail only on regressions
+    --policy <file.json>            rules to enforce (default: the built-in
+                                    ratchet policy — freeze today, flag regressions)
     --base <report.json>            prior scan to diff delta rules against (PR base)
     --head <report.json>            gate a stored head instead of scanning [path]
-    --strict                        exit 1 on a block-mode violation (CI gate)
+    --block                         treat the built-in ratchet rules as blocking
+                                    (they are warn-only by default: observe first)
+    --strict                        exit 1 on a block-mode violation. With the
+                                    built-in policy this needs --block as well,
+                                    or nothing can ever fail. A CI gate is:
+                                      policy --block --base prior.json --strict
+                                    or: policy --policy rules.json --strict
+                                    with "defaultMode":"block" in the file.
     --json <file>                   write the PolicyResult (worker decision input)
     --md <file>                     write the PR-comment markdown
   euthynos alerts [path]          diff two scans into routed regression alerts

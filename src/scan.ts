@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { discoverFiles, moduleOf } from './discover.js';
 import { parseDiscovered } from './parse/dispatch.js';
@@ -41,6 +42,30 @@ export interface ScanOptions {
 
 export function scan(rootInput: string, opts: ScanOptions = {}): ScanReport {
   const root = resolve(rootInput);
+
+  // Fail closed on a root that is not there.
+  //
+  // Without this, a typo'd path discovers zero files, and zero files means
+  // zero detected problems, which scores 100/100 [Strong] — the BEST possible
+  // result for a path that does not exist. That propagates: `policy --strict`
+  // then prints "all architecture policies passed" and exits 0, so a
+  // misconfigured CI gate goes green precisely because it measured nothing.
+  // An unmeasurable repository must be an error, never a perfect score.
+  if (opts.files === undefined) {
+    let stat;
+    try {
+      stat = statSync(root);
+    } catch {
+      throw new Error(
+        `cannot scan ${root}: no such directory.\n` +
+        `  A path that does not exist would otherwise score 100/100 — zero files means zero findings.`,
+      );
+    }
+    if (!stat.isDirectory()) {
+      throw new Error(`cannot scan ${root}: not a directory.`);
+    }
+  }
+
   const months = opts.months ?? 6;
   const minLines = opts.minModuleLines ?? 10;
 
