@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.euthynos-org/euthynos",
+  "title": "Euthynos",
+  "description": "Deterministic, local, read-only code evidence for AI coding agents. 23 MCP tools, 16 languages.",
+  "websiteUrl": "https://euthynos.dev",
+  "repository": {
+    "url": "https://github.com/euthynos-org/euthynos",
+    "source": "github"
+  },
+  "version": "0.1.5",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "euthynos",
+      "version": "0.1.5",
+      "runtimeHint": "npx",
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "Start the MCP stdio server. Without this argument the binary prints CLI help and exits."
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

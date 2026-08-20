@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.5 — 2026-08-21
+
+Registry metadata only. No behaviour change: `dist/`, the 23 tools and their
+schemas are identical to 0.1.4.
+
+- **Published to the official MCP Registry.** `server.json` added at the repo
+  root (schema 2025-12-11) describing the npm package with the `mcp` positional
+  argument, so clients configuring from the registry start the stdio server
+  rather than the CLI help screen.
+- **`mcpName` added to package.json** — `io.github.euthynos-org/euthynos`. The
+  registry verifies npm package ownership by reading this field from the
+  published tarball, which is why this is a release rather than a repo-only
+  change.
+
 ## 0.1.4 — 2026-08-20
 
 Three correctness fixes, all found by running the CLI against this repository
