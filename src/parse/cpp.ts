@@ -5,7 +5,7 @@ import type { CallSite, ExportedSymbol, FunctionRecord, ImportRecord, ParsedFile
 import { parseWith } from './treesitter/loader.js';
 import {
   basenameNoExt, bodyHash, EMPTY_BODY, collectSymbolSpans, countCodeLines, deriveCalls,
-  lineOf, nkids, totalLinesOf,
+  lastSegment, lineOf, nkids, totalLinesOf, walkNamed,
 } from './treesitter/util.js';
 
 /**
@@ -111,7 +111,19 @@ export function parseCppSource(
     imports,
     // C++ type declarations carry no export keyword — a named type in a header
     // is reachable by every translation unit that includes it.
-    symbols: collectSymbolSpans(root, { kinds: SPAN_KINDS, exported: () => true }),
+    symbols: collectSymbolSpans(root, {
+      kinds: SPAN_KINDS,
+      // A forward declaration (`class Foo;` — no body) is not a definition: it
+      // must not appear in the outline, and must not make the type name look
+      // like it is declared in two places (which would disable receiver-type
+      // resolution for that type).
+      name: (n) =>
+        (n.type === 'class_specifier' || n.type === 'struct_specifier' || n.type === 'union_specifier') &&
+        n.childForFieldName('body') == null
+          ? undefined
+          : n.childForFieldName('name')?.text,
+      exported: () => true,
+    }),
     totalLines: totalLinesOf(text),
   };
 }
@@ -191,6 +203,129 @@ function unwrapTemplate(node: Node): Node | null {
 
 // ── functions (recursive, incl. methods + constructors) ──
 
+const CPP_TYPE_DECLS = new Set(['class_specifier', 'struct_specifier']);
+
+/** The class/struct that declares this method — lexical (in-class definition) or
+ * the scope of a qualified out-of-class definition (`void Web::go() {…}`). */
+function enclosingTypeNameCpp(fnNode: Node): string | undefined {
+  let anc: Node | null = fnNode.parent;
+  while (anc && !CPP_TYPE_DECLS.has(anc.type)) anc = anc.parent;
+  if (anc) return anc.childForFieldName('name')?.text ?? undefined;
+  // Out-of-class definition `Ret Web::go() {…}`: take the qualifier from the
+  // function's DECLARATOR NAME only. Walking the whole node would wrongly pick a
+  // qualifier from the RETURN TYPE or a parameter type (`ns::Ret Web::go()`).
+  const decl = functionDeclarator(fnNode)?.childForFieldName('declarator');
+  if (decl?.type === 'qualified_identifier') {
+    const scope = decl.childForFieldName('scope');
+    if (scope) return lastSegment(scope.text, '::');
+  }
+  return undefined;
+}
+
+/** Simple type name from a C++ type node (drop qualifier/generics; null for auto/primitives). */
+function cppTypeName(t: Node | null | undefined): string | null {
+  if (!t) return null;
+  if (t.type === 'type_identifier') return t.text;
+  if (t.type === 'qualified_identifier') return lastSegment(t.text, '::');
+  if (t.type === 'template_type') return cppTypeName(t.childForFieldName('name') ?? nkids(t).find((c) => c.type === 'type_identifier' || c.type === 'qualified_identifier'));
+  return null; // auto / primitive_type / sized types
+}
+
+/** Unwrap pointer/reference/array/init declarators down to the declared name. */
+function cppDeclName(d: Node | null | undefined): string | undefined {
+  if (!d) return undefined;
+  if (d.type === 'identifier' || d.type === 'field_identifier') return d.text;
+  const inner = d.childForFieldName('declarator') ?? nkids(d).find((c) => /_declarator$|^identifier$|^field_identifier$/.test(c.type));
+  return cppDeclName(inner);
+}
+
+/**
+ * Receiver-typed member calls in a C++ method (SOUND — same graph-layer
+ * class-scoping as Java/Kotlin/C#). Types come from the enclosing class's fields,
+ * the parameters, and local declarations (explicit type, or `auto x = Foo()`).
+ * Handles `obj.m()`, `ptr->m()`, and `this->field.m()`; a name declared with two
+ * types is dropped. Out-of-class member definitions have no lexical field access,
+ * a safe under-approximation.
+ */
+function collectTypedCallsCpp(fnNode: Node, params: Node | null, body: Node): { method: string; type: string }[] {
+  const varType = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  const note = (name: string | undefined, tn: string | null): void => {
+    if (!name || !tn) return;
+    const prev = varType.get(name);
+    if (prev !== undefined && prev !== tn) ambiguous.add(name);
+    varType.set(name, tn);
+  };
+  const autoInit = (declNode: Node): string | null => {
+    // `auto x = Foo();` / `auto x = new Foo();`
+    let val: Node | undefined;
+    walkNamed(declNode, (n) => {
+      if (val) return;
+      if (n.type === 'init_declarator') val = n.childForFieldName('value') ?? undefined;
+    });
+    if (!val) return null;
+    if (val.type === 'call_expression') {
+      const fnc = val.childForFieldName('function');
+      // `auto x = Foo()` — a plain identifier callee IS the constructed type
+      // (cppTypeName only recognises type_identifier, so use the text directly);
+      // a same-named non-class falls out at the graph's typeToFile check.
+      if (fnc?.type === 'identifier') return fnc.text;
+      if (fnc?.type === 'qualified_identifier') return cppTypeName(fnc);
+      return null;
+    }
+    if (val.type === 'new_expression') return cppTypeName(val.childForFieldName('type'));
+    return null;
+  };
+  const noteDecl = (declNode: Node): void => {
+    const typeNode = declNode.childForFieldName('type');
+    const declared = cppTypeName(typeNode);
+    const name = cppDeclName(declNode.childForFieldName('declarator') ?? nkids(declNode).find((c) => /_declarator$|^identifier$|^field_identifier$/.test(c.type)));
+    note(name, declared ?? (typeNode?.type === 'auto' ? autoInit(declNode) : null));
+  };
+
+  // Enclosing class fields.
+  let cls: Node | null = fnNode.parent;
+  while (cls && !CPP_TYPE_DECLS.has(cls.type)) cls = cls.parent;
+  const clsBody = cls?.childForFieldName('body');
+  if (clsBody) for (const m of nkids(clsBody)) if (m.type === 'field_declaration') noteDecl(m);
+  // Parameters.
+  if (params) for (const p of nkids(params)) if (p.type === 'parameter_declaration') noteDecl(p);
+  // Local declarations.
+  walkNamed(body, (n) => {
+    if (n.type === 'declaration') noteDecl(n);
+  });
+  for (const n of ambiguous) varType.delete(n);
+
+  const out: { method: string; type: string }[] = [];
+  const seen = new Set<string>();
+  walkNamed(body, (n) => {
+    if (n.type !== 'call_expression') return;
+    const fe = n.childForFieldName('function');
+    if (fe?.type !== 'field_expression') return;
+    const method = fe.childForFieldName('field')?.text;
+    if (!method) return;
+    const recv = fe.childForFieldName('argument');
+    let type: string | null = null;
+    if (recv?.type === 'identifier') type = varType.get(recv.text) ?? null;
+    else if (recv?.type === 'call_expression') {
+      const c = recv.childForFieldName('function');
+      if (c?.type === 'identifier') type = c.text; // Foo().m()
+    } else if (recv?.type === 'field_expression') {
+      // this->field.m() : argument is `this->field` (argument=this, field=name)
+      const inner = recv.childForFieldName('argument');
+      const fieldName = recv.childForFieldName('field')?.text;
+      if (inner?.type === 'this' && fieldName) type = varType.get(fieldName) ?? null;
+    }
+    if (!type) return;
+    const key = `${method}|${type}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ method, type });
+    }
+  });
+  return out;
+}
+
 function collectFunctions(
   node: Node,
   file: string,
@@ -201,8 +336,10 @@ function collectFunctions(
     const decl = functionDeclarator(node);
     const params = decl?.childForFieldName('parameters') ?? null;
     const body = node.childForFieldName('body');
-    const { hash, tokens, literals, sketch } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
+    const { hash, tokens, literals, sketch, defHash } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
     const names = paramNames(params);
+    const typed = body ? collectTypedCallsCpp(node, params, body) : [];
+    const enclosing = enclosingTypeNameCpp(node);
     out.push({
       name: declaratorName(node),
       file,
@@ -215,7 +352,10 @@ function collectFunctions(
       bodyTokens: tokens,
       ...(literals === undefined ? {} : { literalHash: literals }),
       ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+      ...(defHash === undefined ? {} : { defHash }),
+      ...(enclosing === undefined ? {} : { enclosingType: enclosing }),
       ...deriveCalls(body ? collectCallSites(body) : []),
+      ...(typed.length > 0 ? { typedCalls: typed } : {}),
     });
   }
   for (const child of nkids(node)) {

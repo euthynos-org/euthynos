@@ -31,6 +31,22 @@ describe('module discovery', () => {
     expect(moduleOf('lib/payment/y.ts')).toBe('payment');
     expect(moduleOf('index.ts')).toBe('(root)');
   });
+
+  it('moduleOf keys JVM scaffold layouts on the package, not "main"', () => {
+    // The Maven/Gradle defect: every file under src/main/java collapsed to "main".
+    expect(moduleOf('src/main/java/com/acme/service/UserService.java')).toBe('com/acme/service');
+    expect(moduleOf('src/main/kotlin/com/acme/web/Controller.kt')).toBe('com/acme/web');
+    // Monorepo / Android prefixes: the build-module prefix is KEPT so two roots
+    // sharing a package path stay distinct modules (never merged).
+    expect(moduleOf('app/src/main/java/com/x/Foo.java')).toBe('app/com/x');
+    expect(moduleOf('backend/src/test/java/com/x/FooTest.java')).toBe('backend/com/x');
+    expect(moduleOf('app/src/main/java/com/x/Foo.java')).not.toBe(moduleOf('backend/src/main/java/com/x/Bar.java'));
+    // A file directly under the scaffold root has no package → root.
+    expect(moduleOf('src/main/java/Main.java')).toBe('(root)');
+    // Guard: non-JVM trees are completely unaffected by scaffold detection.
+    expect(moduleOf('src/utils/url.ts')).toBe('utils');
+    expect(moduleOf('src/hono-base.ts')).toBe('(root)');
+  });
 });
 
 describe('module depth (spec §1)', () => {

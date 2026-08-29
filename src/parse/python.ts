@@ -165,7 +165,7 @@ function collectFunctions(
     const name = fieldText(node, 'name');
     const params = node.childForFieldName('parameters');
     const body = node.childForFieldName('body');
-    const { hash, tokens, literals, sketch } = body
+    const { hash, tokens, literals, sketch, defHash } = body
       ? normalizedBodyHash(body)
       : { hash: 0, tokens: 0, literals: undefined, sketch: undefined };
     out.push({
@@ -180,6 +180,7 @@ function collectFunctions(
       bodyTokens: tokens,
       ...(literals === undefined ? {} : { literalHash: literals }),
       ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+      ...(defHash === undefined ? {} : { defHash }),
       ...deriveCalls(body ? collectCallSites(body) : []),
     });
   }
@@ -207,9 +208,10 @@ function paramNames(params: Node): string[] {
  * the SEMANTICS must match it exactly — near-clone detection compares these
  * fields across every language's records.
  */
-function normalizedBodyHash(body: Node): { hash: number; tokens: number; literals?: number; sketch?: number[] } {
+function normalizedBodyHash(body: Node): { hash: number; tokens: number; literals?: number; defHash?: number; sketch?: number[] } {
   let h = 0x811c9dc5;
   let lit = 0x811c9dc5;
+  let def = 0x811c9dc5;
   let count = 0;
   const window: string[] = [];
   const grams = new Set<number>();
@@ -230,18 +232,25 @@ function normalizedBodyHash(body: Node): { hash: number; tokens: number; literal
     if (window.length === 4) grams.add(fnv(0x811c9dc5, window.join('|')));
   };
   const visit = (n: Node): void => {
-    if (n.type === 'identifier') mix('ID');
-    else if (LITERALS.has(n.type)) {
+    if (n.type === 'identifier') {
+      mix('ID');
+      def = fnv(def, n.text); // rename-sensitive: identifier text
+    } else if (LITERALS.has(n.type)) {
       mix('LIT');
       lit = fnv(lit, n.text);
-    } else if (n.childCount === 0) mix(n.type);
+      def = fnv(def, n.text); // rename-sensitive: literal text
+    } else if (n.childCount === 0) {
+      mix(n.type);
+      def = fnv(def, n.type);
+    }
     for (const c of ckids(n)) visit(c);
   };
   visit(body);
-  const out: { hash: number; tokens: number; literals?: number; sketch?: number[] } = {
+  const out: { hash: number; tokens: number; literals?: number; defHash?: number; sketch?: number[] } = {
     hash: h >>> 0,
     tokens: count,
     literals: lit >>> 0,
+    defHash: def >>> 0,
   };
   if (count >= 12 && grams.size > 0) out.sketch = [...grams].sort((a, b) => a - b).slice(0, 24);
   return out;

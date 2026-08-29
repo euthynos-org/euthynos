@@ -42,6 +42,11 @@ import type { ParsedFile } from '../types.js';
 
 /**
  * Bump when the on-disk shape or the parse output changes meaning.
+ * v6: FunctionRecord gained `defHash` (rename-sensitive body hash, all parsers).
+ *   A v5 artifact carries no defHash, so its persisted current records would use
+ *   the fallback signature while freshly-parsed HEAD blobs use defHash — the two
+ *   signatures never match and check_my_changes reports every function modified.
+ *   Rebuilding on the bump keeps both sides on the same scheme.
  * v5: the manifest gained `root` and `parsedDigest`, making the artifact
  *   PAIR self-verifying (G4). parsed.json and manifest.json are written
  *   separately, so an interrupted write, an interleaved concurrent writer,
@@ -57,7 +62,7 @@ import type { ParsedFile } from '../types.js';
  * non-TS parsers gained symbols/callSites/totalLines — a v1 artifact would
  * make a Go repo look like it had no types.
  */
-export const INDEX_SCHEMA_VERSION = 5;
+export const INDEX_SCHEMA_VERSION = 6;
 
 export interface FileState {
   size: number;

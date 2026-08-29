@@ -219,7 +219,7 @@ function fnRecord(
   declLine?: number,
   returnType?: ts.TypeNode,
 ): FunctionRecord {
-  const { hash, tokens, sketch } = normalizedBodyHash(body, sf);
+  const { hash, tokens, defHash, sketch } = normalizedBodyHash(body, sf);
   const { calls, memberCalls, callSites } = callees(body, sf);
   const typeRefs = signatureTypeRefs(params, returnType);
   return {
@@ -234,6 +234,7 @@ function fnRecord(
     bodyHash: hash,
     bodyTokens: tokens,
     literalHash: literalsHash(body, sf),
+    ...(defHash === undefined ? {} : { defHash }),
     ...(sketch === undefined ? {} : { ngramSketch: sketch }),
     calls,
     memberCalls,
@@ -350,8 +351,9 @@ function literalsHash(body: ts.Node, sf: ts.SourceFile): number {
 function normalizedBodyHash(
   body: ts.Node,
   sf: ts.SourceFile,
-): { hash: number; tokens: number; sketch?: number[] } {
+): { hash: number; tokens: number; defHash?: number; sketch?: number[] } {
   let h = 0x811c9dc5; // FNV-1a
+  let def = 0x811c9dc5; // rename-SENSITIVE companion (identifier/literal text kept)
   let count = 0;
   // Bottom-K 4-gram sketch over the SAME normalized stream — the near-clone
   // tier's structural-similarity signal. Semantics must match the shared
@@ -375,13 +377,32 @@ function normalizedBodyHash(
     if (window.length === 4) grams.add(fnv(0x811c9dc5, window.join('|')));
   };
   const visit = (n: ts.Node): void => {
-    if (ts.isIdentifier(n) || ts.isPrivateIdentifier(n)) mix('ID');
-    else if (ts.isStringLiteralLike(n) || ts.isNumericLiteral(n)) mix('LIT');
-    else if (n.getChildCount(sf) === 0) mix(ts.SyntaxKind[n.kind] ?? String(n.kind));
+    if (ts.isIdentifier(n) || ts.isPrivateIdentifier(n)) {
+      mix('ID');
+      def = fnv(def, n.text); // rename-sensitive: identifier text
+    } else if (ts.isStringLiteralLike(n) || ts.isNumericLiteral(n)) {
+      mix('LIT');
+      def = fnv(def, n.text); // rename-sensitive: literal text
+    } else if (ts.isRegularExpressionLiteral(n)) {
+      // Structural hash (h/sketch) unchanged — regex stays its kind token — but
+      // def sees the regex TEXT so a /a/ -> /b/ edit is detected. (literalsHash
+      // also captures regex, so the diff signature is covered either way.)
+      const kind = ts.SyntaxKind[n.kind] ?? String(n.kind);
+      mix(kind);
+      def = fnv(def, n.text);
+    } else if (n.getChildCount(sf) === 0) {
+      const kind = ts.SyntaxKind[n.kind] ?? String(n.kind);
+      mix(kind);
+      def = fnv(def, kind);
+    }
     n.forEachChild(visit);
   };
   visit(body);
-  const out: { hash: number; tokens: number; sketch?: number[] } = { hash: h >>> 0, tokens: count };
+  const out: { hash: number; tokens: number; defHash?: number; sketch?: number[] } = {
+    hash: h >>> 0,
+    tokens: count,
+    defHash: def >>> 0,
+  };
   if (count >= 12 && grams.size > 0) out.sketch = [...grams].sort((a, b) => a - b).slice(0, 24);
   return out;
 }

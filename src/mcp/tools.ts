@@ -105,6 +105,24 @@ function cachedParse(root: string): { files: ParsedFile[]; moduleGraph: ModuleGr
   return { files: idx.files, moduleGraph: idx.moduleGraph };
 }
 
+/**
+ * Uniform lower-bound disclosure for an EMPTY call-graph answer. impact_of
+ * already appends this via its summary; callers_of / callees_of / path_between
+ * did not, so an empty result there read as proven absence. The graph counts
+ * every call it could not resolve to a definition (unresolvedCalls) — when that
+ * count is > 0, an empty answer is a lower bound, not a fact. Disclosure only:
+ * never adds or removes an edge, and stays silent when nothing is unresolved so
+ * a fully-resolved answer carries no false uncertainty.
+ */
+function unresolvedLowerBound(graph: CodeGraph): string {
+  const n = graph.stats.unresolvedCalls;
+  if (n <= 0) return '';
+  return (
+    ` Lower bound: ${n} call${n === 1 ? '' : 's'} repo-wide couldn't be resolved to a definition ` +
+    `(external, dynamic, or ambiguous calls the resolver won't guess), so an empty result here is not proof of absence.`
+  );
+}
+
 function cachedGraph(root: string): CodeGraph {
   // The index publishes the EFFECTIVE ignore set; the graph must discover
   // over the same universe or the two tiers answer from different repos.
@@ -1100,7 +1118,8 @@ function callersOfTool(args: Record<string, unknown>): ToolResult {
       text:
         `${note}${r.node.label} has no callers in the graph. ` +
         `Boundary: static calls in indexed source only — dynamic dispatch, reflection and unindexed files are invisible; ` +
-        `verify with a text search before concluding it is unused.`,
+        `verify with a text search before concluding it is unused.` +
+        unresolvedLowerBound(graph),
     };
   }
   const lines = [note + `${list.length} transitive callers of ${r.node.label}:`, ''];
@@ -1135,7 +1154,8 @@ function calleesOfTool(args: Record<string, unknown>): ToolResult {
       text:
         `${note}${r.node.label} has no callees in the graph. ` +
         `Boundary: static calls in indexed source only — dynamic dispatch, reflection and unindexed files are invisible; ` +
-        `the function may still invoke code the graph cannot see.`,
+        `the function may still invoke code the graph cannot see.` +
+        unresolvedLowerBound(graph),
     };
   }
   const lines = [note + `${list.length} transitive callees of ${r.node.label}:`, ''];
@@ -1632,7 +1652,7 @@ function pathBetweenTool(args: Record<string, unknown>): ToolResult {
   const path = pathBetween(graph, ra.node.id, rb.node.id);
   if (!path)
     return {
-      text: `No call path between ${ra.node.label} and ${rb.node.label} in the static call graph (dynamic-dispatch edges are invisible — absence of a static path does not prove the two never interact at runtime).`,
+      text: `No call path between ${ra.node.label} and ${rb.node.label} in the static call graph (dynamic-dispatch edges are invisible — absence of a static path does not prove the two never interact at runtime).${unresolvedLowerBound(graph)}`,
     };
   // A hop is an EDGE, not a node: `a → b` is one call, not two. `path` holds
   // nodes, so the edge count is one less. Reporting the node count here

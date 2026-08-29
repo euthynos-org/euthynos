@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.2.0 — 2026-08-29
+
+Call-graph resolution across languages, plus the change-detection and disclosure
+fixes two independent field reports surfaced. Every resolved edge still carries a
+graded confidence, and the resolver declines rather than guesses when a target is
+ambiguous, external, or unknown — an unresolved call is counted, never invented.
+
+Cross-file and cross-class call resolution
+
+- **Import-binding (ts / js / py / vue).** A bare call to a relatively-imported
+  name resolves to the exact file it was imported from, so `callers_of` on a
+  fully-qualified target no longer returns a same-named function's callers. Binds
+  only to a name the target file exports (confidence 0.9, reason
+  `import-binding`); barrels, aliased imports, and type-only imports decline.
+- **Package-granular modules for JVM / build layouts.** `src/main/java/com/acme/…`
+  now keys the module on the package (`com/acme/…`) instead of collapsing every
+  file to `main`, and keeps distinct monorepo build roots distinct. Import edges
+  and architecture metrics follow the real package structure.
+- **Receiver-type resolution (Java, Kotlin, C#, C++, Swift, PHP).** A member call
+  `x.method()` whose receiver has a declared type — a local, parameter, field, or
+  `new Foo()` — resolves to the method declared on that class (confidence 0.85,
+  reason `receiver-type`), including same-package calls that carry no import. An
+  external, unknown, or ambiguous receiver type resolves to nothing; an
+  interface / protocol receiver is left to the existing over-approximation. The
+  method is matched on the receiver's own class, so an inherited method or a
+  same-named method on a sibling class is never mistaken for it.
+
+check_my_changes
+
+- **Body edits are detected.** The symbol diff uses a rename-sensitive hash that
+  keeps identifier and literal text, so an edit that renames a local, changes a
+  property access, or swaps a literal is reported as a modified symbol. Comment-
+  and whitespace-only edits stay silent. The index schema is bumped so a stale
+  cache rebuilds rather than reporting every function modified.
+
+Honesty
+
+- **Negative answers carry a lower bound.** `callers_of`, `callees_of`, and
+  `path_between` disclose the repo-wide count of calls that could not be resolved
+  when they return an empty result, matching `impact_of` — an empty answer is a
+  lower bound, not a proof of absence.
+
 ## 0.1.5 — 2026-08-21
 
 Registry metadata only. No behaviour change: `dist/`, the 23 tools and their

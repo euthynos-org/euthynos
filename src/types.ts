@@ -65,6 +65,16 @@ export interface FunctionRecord {
    * agent caught and had to read files to disprove.
    */
   literalHash?: number;
+  /**
+   * Rename-SENSITIVE definition hash: the body's token stream with identifier
+   * and literal TEXT included (not collapsed like `bodyHash`). It changes when a
+   * body's identifiers, property names, or literals change, and is what the diff
+   * engine uses to detect an edited BODY — not just an added/removed name.
+   * Comments collapse to their node type and whitespace is not a token, so a
+   * comment- or whitespace-only edit leaves it unchanged. Absent for bodyless
+   * declarations and parsers without a normalized stream (COBOL).
+   */
+  defHash?: number;
   /** Names of functions/methods invoked in the body (best-effort, deduped) — call-graph source. */
   calls: string[];
   /**
@@ -77,6 +87,26 @@ export interface FunctionRecord {
   memberCalls?: string[];
   /** Every call with its exact line — the source of reference locations. */
   callSites?: CallSite[];
+  /**
+   * The immediately-enclosing type (class / interface / enum) that declares this
+   * method, when the parser records it. Lets the resolver bind a receiver call to
+   * the method DECLARED ON the receiver's class — not merely defined somewhere in
+   * the same file (a multi-class file has sibling/inner classes whose same-named
+   * methods must not be mistaken for each other). Absent for top-level functions
+   * and parsers that don't yet record it.
+   */
+  enclosingType?: string;
+  /**
+   * Receiver calls `recv.method()` whose receiver has a statically DECLARED type
+   * — from a typed local (`Foo x = …`), a parameter (`void m(Foo x)`), a field,
+   * or a `new Foo().method()`. `type` is the simple type name (generics/package
+   * qualifier stripped). The resolver binds each to the method of that type's
+   * class file — a SOUND resolution (the type is declared, not guessed), which is
+   * how same-package member calls resolve without a phantom-edge risk. Absent for
+   * parsers that don't yet extract receiver types, and for calls whose receiver
+   * type is unknown.
+   */
+  typedCalls?: { method: string; type: string }[];
   /**
    * Named types referenced in the signature (params + return), for
    * context_bundle's "types touched" section. TypeScript-only today; ABSENT
@@ -151,6 +181,14 @@ export interface ModuleGraph {
   deepImports: DeepImport[];
   /** modules participating in at least one import cycle */
   cycles: string[][];
+  /**
+   * caller FILE path -> the set of target FILE paths its imports resolve to.
+   * buildGraph already resolves every import to a concrete file to derive the
+   * module edges; this keeps that file-level resolution (otherwise discarded)
+   * so the call resolver can scope a receiver call `x.method()` to exactly the
+   * classes the caller's file imports — never the whole repo.
+   */
+  fileImports: Map<string, Set<string>>;
 }
 
 export interface DeepImport {

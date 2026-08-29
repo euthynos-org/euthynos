@@ -72,6 +72,17 @@ export interface BodyHashResult {
   hash: number;
   tokens: number;
   /**
+   * Rename-SENSITIVE definition hash: the same token walk as `hash`, but
+   * identifier and literal LEAVES contribute their TEXT, not a collapsed
+   * placeholder. So it changes when a body's identifiers, property names, or
+   * literals change — the signal `check_my_changes` needs to report an edited
+   * BODY, not just an added/removed name. Comments collapse to their node type
+   * and whitespace is not a token, so a comment- or whitespace-only edit leaves
+   * it unchanged (matching bodyHash's posture). Undefined only when there is no
+   * body.
+   */
+  defHash?: number;
+  /**
    * FNV-1a over literal VALUES in source order. `hash` deliberately erases
    * literals so renamed copies collide — but in a tiny body the literal IS
    * the semantics (A1's getConnInfo false positive), and in a diverged copy
@@ -100,6 +111,7 @@ export const EMPTY_BODY: BodyHashResult = { hash: 0, tokens: 0 };
 export function bodyHash(body: Node, t: HashTypes): BodyHashResult {
   let h = 0x811c9dc5;
   let lit = 0x811c9dc5;
+  let def = 0x811c9dc5;
   let count = 0;
   const window: string[] = [];
   const grams = new Set<number>();
@@ -120,15 +132,21 @@ export function bodyHash(body: Node, t: HashTypes): BodyHashResult {
     if (window.length === NGRAM) grams.add(fnv(0x811c9dc5, window.join('|')));
   };
   const visit = (n: Node): void => {
-    if (t.idTypes.has(n.type)) mix('ID');
-    else if (t.litTypes.has(n.type)) {
+    if (t.idTypes.has(n.type)) {
+      mix('ID');
+      def = fnv(def, n.text); // rename-sensitive: identifier text
+    } else if (t.litTypes.has(n.type)) {
       mix('LIT');
       lit = fnv(lit, n.text);
-    } else if (n.childCount === 0) mix(n.type);
+      def = fnv(def, n.text); // rename-sensitive: literal text
+    } else if (n.childCount === 0) {
+      mix(n.type);
+      def = fnv(def, n.type); // structural leaf (comment nodes collapse here)
+    }
     for (const c of ckids(n)) visit(c);
   };
   visit(body);
-  const out: BodyHashResult = { hash: h >>> 0, tokens: count, literals: lit >>> 0 };
+  const out: BodyHashResult = { hash: h >>> 0, tokens: count, literals: lit >>> 0, defHash: def >>> 0 };
   if (count >= SKETCH_MIN_TOKENS && grams.size > 0) {
     out.sketch = [...grams].sort((a, b) => a - b).slice(0, SKETCH_K);
   }

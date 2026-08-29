@@ -187,7 +187,7 @@ function fnRecord(name: string, sig: Node, body: Node | null, file: string): Fun
   const params = fnSig.childForFieldName('parameters')
     ?? nkids(fnSig).find((n) => n.type === 'formal_parameter_list')
     ?? null;
-  const { hash, tokens, literals, sketch } = body
+  const { hash, tokens, literals, sketch, defHash } = body
     ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES })
     : EMPTY_BODY;
   const names = params ? paramNames(params) : [];
@@ -203,6 +203,7 @@ function fnRecord(name: string, sig: Node, body: Node | null, file: string): Fun
     bodyTokens: tokens,
     ...(literals === undefined ? {} : { literalHash: literals }),
     ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+    ...(defHash === undefined ? {} : { defHash }),
     ...deriveCalls(body ? collectCallSites(body) : []),
   };
 }

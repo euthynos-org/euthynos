@@ -98,7 +98,7 @@ export function parseGoSource(
 function fnRecord(name: string, decl: Node, file: string): FunctionRecord {
   const params = decl.childForFieldName('parameters');
   const body = decl.childForFieldName('body');
-  const { hash, tokens, literals, sketch } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
+  const { hash, tokens, literals, sketch, defHash } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
   const names = params ? paramNames(params) : [];
   return {
     name,
@@ -112,6 +112,7 @@ function fnRecord(name: string, decl: Node, file: string): FunctionRecord {
     bodyTokens: tokens,
     ...(literals === undefined ? {} : { literalHash: literals }),
     ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+    ...(defHash === undefined ? {} : { defHash }),
     ...deriveCalls(body ? collectCallSites(body) : []),
   };
 }

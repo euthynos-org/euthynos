@@ -23,3 +23,7 @@ euthynos-report.md
 landing-page/
 scripts/experiments/
 scan.json
+
+# MCP registry publisher CLI (downloaded tool, not source)
+mcp-publisher.exe
+mcp-publisher

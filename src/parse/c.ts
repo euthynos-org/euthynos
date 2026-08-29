@@ -139,7 +139,7 @@ function fnRecord(fn: Node, file: string): FunctionRecord | null {
   const paramList = fdecl.childForFieldName('parameters');
   const names = paramList ? paramNames(paramList) : [];
   const body = fn.childForFieldName('body');
-  const { hash, tokens, literals, sketch } = body
+  const { hash, tokens, literals, sketch, defHash } = body
     ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES })
     : EMPTY_BODY;
 
@@ -155,6 +155,7 @@ function fnRecord(fn: Node, file: string): FunctionRecord | null {
     bodyTokens: tokens,
     ...(literals === undefined ? {} : { literalHash: literals }),
     ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+    ...(defHash === undefined ? {} : { defHash }),
     ...deriveCalls(body ? collectCallSites(body) : []),
   };
 }

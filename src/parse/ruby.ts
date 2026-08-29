@@ -195,7 +195,7 @@ function collectFunctions(
   if (node.type === 'method') {
     const params = node.childForFieldName('parameters');
     const body = node.childForFieldName('body');
-    const { hash, tokens, literals, sketch } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
+    const { hash, tokens, literals, sketch, defHash } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
     out.push({
       name: fieldText(node, 'name'),
       file,
@@ -208,6 +208,7 @@ function collectFunctions(
       bodyTokens: tokens,
       ...(literals === undefined ? {} : { literalHash: literals }),
       ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+      ...(defHash === undefined ? {} : { defHash }),
       ...deriveCalls(body ? collectCallSites(body) : []),
     });
   }

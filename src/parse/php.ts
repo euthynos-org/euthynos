@@ -161,7 +161,7 @@ function hasDefault(param: Node): boolean {
 function fnRecord(name: string, node: Node, file: string, exported: boolean): FunctionRecord {
   const params = node.childForFieldName('parameters');
   const body = node.childForFieldName('body');
-  const { hash, tokens, literals, sketch } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
+  const { hash, tokens, literals, sketch, defHash } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
   return {
     name,
     file,
@@ -174,8 +174,148 @@ function fnRecord(name: string, node: Node, file: string, exported: boolean): Fu
     bodyTokens: tokens,
     ...(literals === undefined ? {} : { literalHash: literals }),
     ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+    ...(defHash === undefined ? {} : { defHash }),
+    ...(enclosingTypeNamePhp(node) === undefined ? {} : { enclosingType: enclosingTypeNamePhp(node) }),
     ...deriveCalls(body ? collectCallSites(body) : []),
+    ...(() => {
+      const typed = body ? collectTypedCallsPhp(node, body) : [];
+      return typed.length > 0 ? { typedCalls: typed } : {};
+    })(),
   };
+}
+
+const PHP_TYPE_DECLS = new Set(['class_declaration', 'interface_declaration', 'trait_declaration', 'enum_declaration']);
+
+/** The named class/interface/trait/enum that lexically contains this method, or
+ * undefined if the method belongs to an ANONYMOUS class (`new class {…}`) — whose
+ * members are not declared on any named type. */
+function enclosingTypeNamePhp(node: Node): string | undefined {
+  let anc: Node | null = node.parent;
+  while (anc) {
+    if (anc.type === 'object_creation_expression') return undefined; // anonymous class boundary
+    if (PHP_TYPE_DECLS.has(anc.type)) return anc.childForFieldName('name')?.text ?? undefined;
+    anc = anc.parent;
+  }
+  return undefined;
+}
+
+/** Simple type name from a PHP type node (strip namespace, unwrap nullable). A
+ * UNION/INTERSECTION type is ambiguous — return null (decline) rather than bind
+ * to one arm the value may never hold. */
+function phpTypeName(t: Node | null | undefined): string | null {
+  if (!t) return null;
+  if (t.type === 'union_type' || t.type === 'intersection_type' || t.type === 'disjunctive_normal_form_type') return null;
+  if (t.type === 'named_type') {
+    const nm = nkids(t).find((c) => c.type === 'name' || c.type === 'qualified_name');
+    return nm ? lastSegment(nm.text, '\\') : null;
+  }
+  if (t.type === 'name') return t.text;
+  if (t.type === 'qualified_name') return lastSegment(t.text, '\\');
+  // nullable_type / optional_type wrap a single named member.
+  const inner = nkids(t).find((c) => c.type === 'named_type' || c.type === 'name' || c.type === 'qualified_name');
+  return inner ? phpTypeName(inner) : null;
+}
+
+/** The constructed type of a `new X()` expression. */
+function oceType(oce: Node): string | null {
+  const nm = nkids(oce).find((c) => c.type === 'name' || c.type === 'qualified_name');
+  return nm ? phpTypeName(nm) : null;
+}
+
+/**
+ * Receiver-typed member calls in a PHP method (SOUND — shared graph-layer
+ * class-scoping). Types from the class's typed properties, typed parameters, and
+ * `$x = new Foo()` locals. Fields are keyed by their bare name (accessed as
+ * `$this->name`); parameters/locals by their `$var` form. A name declared with two
+ * types is dropped.
+ */
+function collectTypedCallsPhp(node: Node, body: Node): { method: string; type: string }[] {
+  const varType = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  const note = (key: string | undefined, tn: string | null): void => {
+    if (!key || !tn) return;
+    const prev = varType.get(key);
+    if (prev !== undefined && prev !== tn) ambiguous.add(key);
+    varType.set(key, tn);
+  };
+
+  // Class properties (fields) — keyed by bare name (`$this->svc` accesses `svc`).
+  let cls: Node | null = node.parent;
+  while (cls && !PHP_TYPE_DECLS.has(cls.type)) cls = cls.parent;
+  const clsBody = cls?.childForFieldName('body') ?? cls;
+  if (clsBody) {
+    for (const m of nkids(clsBody)) {
+      if (m.type === 'property_declaration') {
+        const tn = phpTypeName(m.childForFieldName('type'));
+        for (const pe of nkids(m)) {
+          if (pe.type !== 'property_element') continue;
+          const vn = nkids(pe).find((c) => c.type === 'variable_name');
+          note(vn ? nkids(vn).find((c) => c.type === 'name')?.text : undefined, tn);
+        }
+      } else if (m.type === 'method_declaration' && (m.childForFieldName('name')?.text ?? '').toLowerCase() === '__construct') {
+        // Constructor property promotion: `__construct(private UserService $svc)`
+        // declares a field, accessed as `$this->svc` → register under the BARE name.
+        const ctorParams = m.childForFieldName('parameters');
+        if (ctorParams) {
+          for (const p of nkids(ctorParams)) {
+            if (p.type !== 'property_promotion_parameter') continue;
+            const vn = p.childForFieldName('name');
+            const bare = vn ? nkids(vn).find((c) => c.type === 'name')?.text : undefined;
+            note(bare, phpTypeName(p.childForFieldName('type')));
+          }
+        }
+      }
+    }
+  }
+  // Parameters — keyed by `$var`.
+  const params = node.childForFieldName('parameters');
+  if (params) {
+    for (const p of nkids(params)) {
+      if (p.type !== 'simple_parameter' && p.type !== 'property_promotion_parameter') continue;
+      note(p.childForFieldName('name')?.text, phpTypeName(p.childForFieldName('type')));
+    }
+  }
+  // Locals: `$x = new Foo()`. Do NOT descend into nested closures/arrow functions
+  // (their locals are a different scope and would pollute this method's var map).
+  const walkNoNested = (n: Node, fn: (x: Node) => void): void => {
+    fn(n);
+    for (const c of nkids(n)) {
+      if (c.type === 'anonymous_function' || c.type === 'anonymous_function_creation_expression' || c.type === 'arrow_function') continue;
+      walkNoNested(c, fn);
+    }
+  };
+  walkNoNested(body, (n) => {
+    if (n.type !== 'assignment_expression') return;
+    const lhs = n.childForFieldName('left') ?? nkids(n)[0];
+    const rhs = n.childForFieldName('right') ?? nkids(n)[nkids(n).length - 1];
+    if (lhs?.type === 'variable_name' && rhs?.type === 'object_creation_expression') note(lhs.text, oceType(rhs));
+  });
+  for (const k of ambiguous) varType.delete(k);
+
+  const out: { method: string; type: string }[] = [];
+  const seen = new Set<string>();
+  walkNamed(body, (n) => {
+    if (n.type !== 'member_call_expression' && n.type !== 'nullsafe_member_call_expression') return;
+    const method = n.childForFieldName('name')?.text;
+    const obj = n.childForFieldName('object');
+    if (!method || !obj) return;
+    let type: string | null = null;
+    if (obj.type === 'variable_name') type = varType.get(obj.text) ?? null; // $local / $param
+    else if (obj.type === 'object_creation_expression') type = oceType(obj); // (new Foo())->m()
+    else if (obj.type === 'member_access_expression') {
+      // $this->field->m() : object=$this, name=field (bare)
+      const io = obj.childForFieldName('object');
+      const field = obj.childForFieldName('name')?.text;
+      if (io?.type === 'variable_name' && io.text === '$this' && field) type = varType.get(field) ?? null;
+    }
+    if (!type) return;
+    const key = `${method}|${type}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ method, type });
+    }
+  });
+  return out;
 }
 
 /** Inner name of each parameter's variable_name, '$' stripped if present. */

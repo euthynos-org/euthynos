@@ -101,18 +101,27 @@ function parseOldBlob(root: string, headRef: string, path: string): ParsedFile |
 
 /**
  * Multiset of content signatures per function name — same-name overloads
- * compare correctly. The signature is bodyHash PLUS literalHash: bodyHash
- * alone erases literals by design, which made a literal-only edit
- * (`return a + 2` -> `return a + 3`) invisible to the symbol diff — caught
- * by the line-ending/CRLF tests in test/diff-engine.test.ts before any tool
- * consumed the engine.
+ * compare correctly. The signature is the rename-SENSITIVE `defHash` when the
+ * parser produced one: it keeps identifier and literal TEXT, so a body edit that
+ * only renames a local, changes a property access (`req.url` -> `req.path`), or
+ * swaps a literal is detected — the class of edit `bodyHash` erases by design and
+ * that read as "no modified symbols" in the field. It stays blind to comment- and
+ * whitespace-only edits (comments collapse to a node type, whitespace is not a
+ * token), so cosmetic edits are still correctly NOT reported as modified. Parsers
+ * without a normalized stream (COBOL) and bodyless declarations fall back to the
+ * old bodyHash+literalHash signature, so their behavior is unchanged.
  */
 function hashesByName(fns: readonly FunctionRecord[]): Map<string, string> {
   const m = new Map<string, string[]>();
   for (const fn of fns) {
     if (fn.name.startsWith('(')) continue;
     const list = m.get(fn.name) ?? [];
-    list.push(`${fn.bodyHash}:${fn.literalHash ?? ''}`);
+    // defHash (rename-sensitive) is the primary signal; literalHash is kept
+    // alongside it to (a) restore ~64-bit collision resistance and (b) cover any
+    // literal kind a defHash walk might not fold in (e.g. a regex-literal edit),
+    // since literalHash captures every literal's text. Fallback for COBOL /
+    // bodyless records keeps the original signature.
+    list.push(fn.defHash !== undefined ? `d${fn.defHash}:${fn.literalHash ?? ''}` : `${fn.bodyHash}:${fn.literalHash ?? ''}`);
     m.set(fn.name, list);
   }
   return new Map([...m.entries()].map(([k, v]) => [k, v.sort().join(',')]));

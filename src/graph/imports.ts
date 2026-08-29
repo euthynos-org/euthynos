@@ -17,6 +17,7 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
   const importedBy = new Map<string, Set<string>>();
   const usedExports = new Map<string, Set<string>>();
   const deepImports: DeepImport[] = [];
+  const fileImports = new Map<string, Set<string>>();
 
   const moduleIndexes = new Map<string, Set<string>>();
   for (const f of files) {
@@ -44,6 +45,13 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
       const from = f.module;
       const to = targetFile.module;
 
+      // File-level resolution, kept regardless of module (a same-module import
+      // still binds a receiver call). Never a self-edge.
+      if (target !== f.path) {
+        if (!fileImports.has(f.path)) fileImports.set(f.path, new Set());
+        fileImports.get(f.path)!.add(target);
+      }
+
       if (from !== to) {
         if (!imports.has(from)) imports.set(from, new Set());
         imports.get(from)!.add(to);
@@ -68,10 +76,10 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
     }
   }
 
-  return { imports, importedBy, usedExports, deepImports, cycles: findCycles(runtimeImports) };
+  return { imports, importedBy, usedExports, deepImports, fileImports, cycles: findCycles(runtimeImports) };
 }
 
-function resolveRelative(
+export function resolveRelative(
   fromPath: string,
   spec: string,
   byPath: Map<string, ParsedFile>,

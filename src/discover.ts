@@ -200,7 +200,56 @@ export function isTestPath(rel: string): boolean {
   return TEST_PATH.test(rel);
 }
 
+/**
+ * Build-tool source roots (Maven/Gradle/Android/sbt layouts) whose segments are
+ * scaffolding, not package structure. After such a root the directory path
+ * mirrors the package — Java/Kotlin/Scala/Groovy require it to — so the PACKAGE
+ * is the module, not the literal `main`/`java` segment. Without this, every file
+ * under `src/main/java/...` collapses to a single module named "main", making all
+ * packages invisible and (because a module never imports itself) making every
+ * cross-package member call unresolvable. Longest patterns first so `src/main/java`
+ * wins over any shorter coincidental match.
+ */
+const SCAFFOLD_ROOTS = [
+  'src/main/java', 'src/main/kotlin', 'src/main/scala', 'src/main/groovy',
+  'src/test/java', 'src/test/kotlin', 'src/test/scala', 'src/test/groovy',
+  'src/androidTest/java', 'src/androidTest/kotlin',
+] as const;
+
+/**
+ * If `rel` sits under a build-scaffold source root, split it into the prefix
+ * BEFORE the root (the build module — `app` / `backend` in a monorepo) and the
+ * path AFTER it (package + filename). Last occurrence. Otherwise null. Pure —
+ * path-only, no IO — and inert for JS/TS/Python trees, which never contain a
+ * `src/main/java/`-style segment.
+ */
+function afterScaffold(rel: string): { prefix: string; rest: string } | null {
+  for (const root of SCAFFOLD_ROOTS) {
+    const needle = `${root}/`;
+    const idx = rel.lastIndexOf(needle);
+    if (idx !== -1) {
+      return { prefix: rel.slice(0, idx).replace(/\/$/, ''), rest: rel.slice(idx + needle.length) };
+    }
+  }
+  return null;
+}
+
 export function moduleOf(rel: string): string {
+  // JVM/build scaffold: the module is the package directory after the source
+  // root, keyed under the build-module prefix when one exists so two monorepo
+  // roots sharing a package path stay distinct
+  // (`app/src/main/java/com/x/A.java` -> `app/com/x`,
+  //  `backend/src/main/java/com/x/B.java` -> `backend/com/x`;
+  //  `src/main/java/com/acme/service/X.java` -> `com/acme/service`). This only
+  // SPLITS the old coarse module into finer ones — never merges two paths that
+  // were previously distinct — so no correct import-scoped edge is invalidated.
+  const scaffold = afterScaffold(rel);
+  if (scaffold !== null) {
+    const dir = scaffold.rest.split('/').slice(0, -1).join('/');
+    const combined = [scaffold.prefix, dir].filter((s) => s !== '').join('/');
+    return combined === '' ? '(root)' : combined;
+  }
+
   const parts = rel.split('/');
   const containers = new Set(['src', 'lib', 'packages', 'apps']);
   let i = 0;

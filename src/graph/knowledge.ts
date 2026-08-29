@@ -1,4 +1,5 @@
 import type { CodeEdge, CodeGraph, CodeNode, ModuleGraph, ModuleReport, ParsedFile } from '../types.js';
+import { resolveRelative } from './imports.js';
 
 /**
  * The code knowledge graph — Euthynos's structural map of a repo.
@@ -58,6 +59,8 @@ export function buildKnowledgeGraph(
   const fnCalls = new Map<string, string[]>();
   /** fn id -> the subset of those names that were receiver calls (`x.foo()`). */
   const fnMemberCalls = new Map<string, Set<string>>();
+  /** fn id -> receiver calls whose receiver has a DECLARED type (sound resolution). */
+  const fnTyped = new Map<string, { method: string; type: string }[]>();
 
   for (const f of src) {
     nodes.set(fileId(f.path), { id: fileId(f.path), kind: 'file', label: f.path, module: f.module, file: f.path });
@@ -83,11 +86,52 @@ export function buildKnowledgeGraph(
       callsIn.set(id, new Set());
       fnCalls.set(id, fn.calls);
       if (fn.memberCalls !== undefined) fnMemberCalls.set(id, new Set(fn.memberCalls));
+      if (fn.typedCalls !== undefined && fn.typedCalls.length > 0) fnTyped.set(id, fn.typedCalls);
       local.set(fn.name, id);
       const g = globalByName.get(fn.name);
       if (g) g.push(id);
       else globalByName.set(fn.name, [id]);
     }
+  }
+
+  // ── Per-file import bindings (the ground truth a name-based resolver otherwise
+  //    ignores). For a caller file that writes `import { mergePath } from './utils/url'`,
+  //    resolve the RELATIVE specifier to a concrete file and, only when that file
+  //    directly defines a function of the EXACT imported name, bind name→fn. This is
+  //    strictly narrowing: barrels/re-exports (no such fn node), aliased imports
+  //    (parser stores the local name, which the target won't define), type-only
+  //    imports, namespace/default forms, and module-path (non-relative) specifiers
+  //    all fail the lookup and fall through to the coarser rules below — no edge
+  //    is ever invented. Relative-import languages only (ts/js/py/vue). ──
+  const byPath = new Map<string, ParsedFile>();
+  const exportsByPath = new Map<string, Set<string>>();
+  for (const f of src) {
+    byPath.set(f.path, f);
+    exportsByPath.set(f.path, new Set(f.exports.map((e) => e.name)));
+  }
+  const importBinding = new Map<string, Map<string, string>>(); // caller file → (imported name → fn id)
+  for (const f of src) {
+    const bound = new Map<string, string>();
+    for (const imp of f.imports) {
+      if (imp.isTypeOnly) continue; // erased at runtime — never a call target
+      if (!imp.specifier.startsWith('.')) continue; // relative specifiers only
+      const targetPath = resolveRelative(f.path, imp.specifier, byPath);
+      if (!targetPath) continue;
+      const targetLocals = localByFile.get(targetPath);
+      const targetExports = exportsByPath.get(targetPath);
+      if (!targetLocals || !targetExports) continue;
+      for (const name of imp.named) {
+        // Bind only to a name the target actually EXPORTS. This excludes private
+        // helpers (localByFile carries every function, exported or not) and, for
+        // an aliased import `{ real as name }` where imp.named holds the LOCAL
+        // alias, declines unless the target also exports something of that exact
+        // name — so an alias cannot mis-bind to an unrelated same-named private.
+        if (!targetExports.has(name)) continue;
+        const fnid = targetLocals.get(name);
+        if (fnid) bound.set(name, fnid); // exact-name exported definition in the resolved file
+      }
+    }
+    if (bound.size > 0) importBinding.set(f.path, bound);
   }
 
   // ── Import edges (module-level from the module graph; file-level for context) ──
@@ -101,9 +145,70 @@ export function buildKnowledgeGraph(
     }
   }
 
+  // ── Type index for receiver-type resolution. `typeToFile` maps a
+  //    class/interface/enum name to the file that declares it, or null when two+
+  //    files declare that name (AMBIGUOUS → never resolved). `typeMethods` maps a
+  //    type name to the methods DECLARED ON that class (by enclosingType), so a
+  //    receiver call binds to the method on the receiver's own class — never a
+  //    same-named method on a sibling/inner class in the same file, and never an
+  //    inherited method (which the class does not declare → no edge, safe). ──
+  const typeToFile = new Map<string, string | null>();
+  const interfaceTypes = new Set<string>();
+  for (const f of src) {
+    for (const s of f.symbols ?? []) {
+      if (s.kind !== 'class' && s.kind !== 'interface' && s.kind !== 'enum') continue;
+      if (s.kind === 'interface') interfaceTypes.add(s.name);
+      typeToFile.set(s.name, typeToFile.has(s.name) ? null : f.path);
+    }
+  }
+  const typeMethods = new Map<string, Map<string, string>>(); // type name → (method → fn id) declared on it
+  for (const f of src) {
+    for (const fn of f.functions) {
+      if (fn.enclosingType === undefined) continue;
+      let mm = typeMethods.get(fn.enclosingType);
+      if (!mm) {
+        mm = new Map();
+        typeMethods.set(fn.enclosingType, mm);
+      }
+      if (!mm.has(fn.name)) mm.set(fn.name, fnId(f.path, fn.name)); // first decl wins (overloads)
+    }
+  }
+
   // ── Call edges (deterministic resolver; ambiguous names are skipped, not guessed) ──
   let callEdges = 0;
   let unresolvedCalls = 0;
+  const addCallEdge = (callerId: string, targetId: string, confidence: number, reason: string): boolean => {
+    if (targetId === callerId) return false;
+    if (callsOut.get(callerId)!.has(targetId)) return false;
+    callsOut.get(callerId)!.add(targetId);
+    callsIn.get(targetId)!.add(callerId);
+    edges.push({ from: callerId, to: targetId, kind: 'calls', confidence, reason });
+    callMeta.set(`${callerId}|${targetId}`, { confidence, reason });
+    callEdges++;
+    return true;
+  };
+
+  // Receiver-type resolution (SOUND, runs first): `recv.method()` where recv's
+  // DECLARED type T names a class we can locate, and that class's file defines
+  // `method`, binds at 0.85 'receiver-type'. This resolves same-package member
+  // calls (which carry no import for module-scoping to use) without guessing —
+  // an unknown/external/ambiguous receiver type resolves to no file and yields
+  // no edge. A (caller, method) pair resolved here is not re-attempted by the
+  // weaker name-based member rules below, so they can't override it with a guess.
+  const typedResolved = new Set<string>(); // `${callerId}|${method}`
+  for (const [callerId, typed] of fnTyped) {
+    for (const { method, type } of typed) {
+      if (!typeToFile.get(type)) continue; // unknown type (external/stdlib) or ambiguous (null) → no edge
+      // An interface-typed receiver is left to the module-scoped over-approximation,
+      // which reaches the IMPLEMENTATIONS (what blast radius wants) — the interface's
+      // own abstract method is a weaker target than every concrete impl.
+      if (interfaceTypes.has(type)) continue;
+      const targetId = typeMethods.get(type)?.get(method);
+      if (!targetId) continue; // the class itself doesn't DECLARE the method (inherited/absent) → no edge
+      if (addCallEdge(callerId, targetId, 0.85, 'receiver-type')) typedResolved.add(`${callerId}|${method}`);
+    }
+  }
+
   for (const [callerId, names] of fnCalls) {
     const caller = nodes.get(callerId)!;
     const viaMember = fnMemberCalls.get(callerId);
@@ -111,21 +216,16 @@ export function buildKnowledgeGraph(
       // A name reached through a receiver (`arr.every()`) is only a candidate
       // edge with structural evidence — see resolveCall.
       const form: CallForm = viaMember?.has(name) === true ? 'member' : 'bare';
-      const resolved = resolveCall(name, form, caller, localByFile, globalByName, moduleGraph, nodes);
+      // Already bound soundly by the receiver's declared type — don't let a
+      // weaker name-heuristic add a competing (possibly wrong) edge for it.
+      if (form === 'member' && typedResolved.has(`${callerId}|${name}`)) continue;
+      const resolved = resolveCall(name, form, caller, localByFile, globalByName, moduleGraph, nodes, importBinding);
       if (resolved.length === 0) {
         unresolvedCalls++;
         continue;
       }
       for (const res of resolved) {
-        if (res.id === callerId) continue;
-        const targetId = res.id;
-        if (!callsOut.get(callerId)!.has(targetId)) {
-          callsOut.get(callerId)!.add(targetId);
-          callsIn.get(targetId)!.add(callerId);
-          edges.push({ from: callerId, to: targetId, kind: 'calls', confidence: res.confidence, reason: res.reason });
-          callMeta.set(`${callerId}|${targetId}`, { confidence: res.confidence, reason: res.reason });
-          callEdges++;
-        }
+        addCallEdge(callerId, res.id, res.confidence, res.reason);
       }
     }
   }
@@ -183,11 +283,24 @@ function resolveCall(
   globalByName: Map<string, string[]>,
   moduleGraph: ModuleGraph,
   nodes: Map<string, CodeNode>,
+  importBinding: Map<string, Map<string, string>>,
 ): Resolved[] {
   const all = globalByName.get(name) ?? [];
   const local = localByFile.get(caller.file!)?.get(name);
   if (local && !(local === caller.id && all.length > 1)) {
     return [{ id: local, confidence: 1, reason: 'same-file' }];
+  }
+
+  // The caller's own import binding is ground truth: it names the exact file the
+  // symbol comes from, so it beats every name-heuristic below and is the ONLY rule
+  // that disambiguates two same-named functions correctly (the mergePath shape,
+  // where module-level scoping attributed one file's callers to the other). Bare
+  // calls only — a member call `x.name()` is not the imported standalone function.
+  if (form === 'bare') {
+    const bound = importBinding.get(caller.file!)?.get(name);
+    if (bound && bound !== caller.id) {
+      return [{ id: bound, confidence: 0.9, reason: 'import-binding' }];
+    }
   }
 
   const cands = all.filter((id) => id !== caller.id);
@@ -226,5 +339,14 @@ function resolveCall(
       return [{ id: localMod[0]!, confidence: 0.6, reason: 'module-local' }];
     }
   }
+
+  // A receiver call `recv.method()` is deliberately NOT resolved by matching the
+  // method name against the caller's imported files: the receiver's TYPE is
+  // unknown (the parser records only the method name), so a name match is a
+  // guess — `headers.get()` would bind to an imported local `get()`, exactly the
+  // phantom-edge class the bare-only restrictions above exist to prevent. Safe
+  // receiver resolution needs the receiver's type (from `new Foo()` / field and
+  // local declarations); that is the Wave-2 bridge, and `moduleGraph.fileImports`
+  // is plumbed for it. Until then we invent NO member edge here.
   return [];
 }

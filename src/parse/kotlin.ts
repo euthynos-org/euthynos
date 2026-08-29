@@ -5,7 +5,7 @@ import type { CallSite, ExportedSymbol, FunctionRecord, ImportRecord, ParsedFile
 import { parseWith } from './treesitter/loader.js';
 import {
   bodyHash, EMPTY_BODY, ckids, collectSymbolSpans, countCodeLines, deriveCalls, lastSegment,
-  lineOf, nkids, totalLinesOf,
+  lineOf, nkids, totalLinesOf, walkNamed,
 } from './treesitter/util.js';
 
 /**
@@ -189,12 +189,14 @@ function collectFunctions(
     const name = funcName(node);
     const params = paramsNode(node);
     const body = nkids(node).find((c) => c.type === 'function_body') ?? null;
-    const { hash, tokens, literals, sketch } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
+    const { hash, tokens, literals, sketch, defHash } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
     const names = paramNames(params);
     // Top-level funcs use the visibility rule; methods are exported iff their
     // own visibility allows AND they are reachable from a public type. We keep
     // it simple and consistent with the other parsers: a method is "exported"
     // when its own visibility is public (matches Java's per-member rule).
+    const typed = body ? collectTypedCallsKt(node, body) : [];
+    const enclosing = enclosingTypeNameKt(node);
     out.push({
       name,
       file,
@@ -207,12 +209,140 @@ function collectFunctions(
       bodyTokens: tokens,
       ...(literals === undefined ? {} : { literalHash: literals }),
       ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+      ...(defHash === undefined ? {} : { defHash }),
+      ...(enclosing === undefined ? {} : { enclosingType: enclosing }),
       ...deriveCalls(body ? collectCallSites(body) : []),
+      ...(typed.length > 0 ? { typedCalls: typed } : {}),
     });
   }
   for (const child of nkids(node)) {
     collectFunctions(child, file, topLevelFnIds, out);
   }
+}
+
+// Scopes that break the "declared on the enclosing class" chain: a method inside
+// an anonymous object (`object : R {…}`), a lambda, an initializer block, or a
+// nested local function is NOT declared on the outer class, so its members must
+// not be attributed to it (that produced false receiver-type edges — a
+// `s.run{…}` scope call resolving to an anonymous object's `run`).
+const KT_SCOPE_STOP = new Set(['object_literal', 'function_body', 'lambda_literal', 'anonymous_initializer']);
+
+/** The class/object NODE that lexically declares this function, or null if the
+ * function is nested inside a lambda / anonymous object / local function. */
+function enclosingClassNodeKt(node: Node): Node | null {
+  let anc: Node | null = node.parent;
+  while (anc) {
+    if (anc.type === 'class_declaration' || anc.type === 'object_declaration') return anc;
+    if (KT_SCOPE_STOP.has(anc.type)) return null;
+    anc = anc.parent;
+  }
+  return null;
+}
+
+function enclosingTypeNameKt(node: Node): string | undefined {
+  const cls = enclosingClassNodeKt(node);
+  return cls ? (nkids(cls).find((c) => c.type === 'type_identifier')?.text ?? undefined) : undefined;
+}
+
+/** Simple type name from a Kotlin type node: unwrap nullable, take the LAST base
+ * type_identifier (a qualified/nested type `com.acme.Foo` / `Order.Line` keeps its
+ * segments as siblings — the rightmost is the actual type; a generic `List<Bar>`
+ * has one direct id `List`). Null for shapes we can't name. */
+function ktTypeName(t: Node | null | undefined): string | null {
+  if (!t) return null;
+  let n: Node = t;
+  if (n.type === 'nullable_type') {
+    const u = nkids(n).find((c) => c.type === 'user_type' || c.type === 'type_identifier');
+    if (u) n = u;
+  }
+  if (n.type === 'user_type') {
+    const ids = nkids(n).filter((c) => c.type === 'type_identifier');
+    return ids.length > 0 ? ids[ids.length - 1]!.text : null;
+  }
+  if (n.type === 'type_identifier') return n.text;
+  return null;
+}
+
+/**
+ * Receiver-typed member calls in a Kotlin function body — the same SOUND bridge
+ * as Java: build a var→type map from the enclosing class's constructor
+ * properties and body fields, the function's parameters, and body `val`/`var`
+ * declarations (explicit type, or inferred from a `Foo()` constructor
+ * initializer), then record each `recv.method()` / `Foo().method()` whose
+ * receiver type is known. A name declared with two different types is dropped.
+ * The graph resolves each to the method DECLARED ON that class — never a guess.
+ */
+function collectTypedCallsKt(fnNode: Node, body: Node): { method: string; type: string }[] {
+  const varType = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  const note = (name: string | undefined | null, tn: string | null): void => {
+    if (!name || !tn) return;
+    const prev = varType.get(name);
+    if (prev !== undefined && prev !== tn) ambiguous.add(name);
+    varType.set(name, tn);
+  };
+  const idName = (n: Node): string | undefined => nkids(n).find((c) => c.type === 'simple_identifier')?.text;
+  const typeChild = (n: Node): Node | undefined => nkids(n).find((c) => c.type === 'user_type' || c.type === 'nullable_type');
+  // A `val x = Foo()` initializer types x as Foo (constructor call as the value).
+  const initType = (propDecl: Node): string | null => {
+    const call = nkids(propDecl).find((c) => c.type === 'call_expression');
+    if (!call) return null;
+    const callee = nkids(call).find((c) => c.type !== 'call_suffix');
+    // Only an Uppercase-initial callee is treated as a constructor (Kotlin naming
+    // convention) — a lowercase factory `val x = buildThing()` must not type x as
+    // 'buildThing' and risk colliding with a class of that name.
+    return callee?.type === 'simple_identifier' && /^[A-Z]/.test(callee.text) ? callee.text : null;
+  };
+  const noteProp = (propDecl: Node): void => {
+    const vd = nkids(propDecl).find((c) => c.type === 'variable_declaration');
+    if (!vd) return;
+    note(idName(vd), ktTypeName(typeChild(vd)) ?? initType(propDecl));
+  };
+
+  // Enclosing class: constructor properties (weakest — like Java fields) and
+  // class-body property fields. Null when the function is inside a lambda /
+  // anonymous object / local function — then it has no enclosing-class fields.
+  const cls: Node | null = enclosingClassNodeKt(fnNode);
+  if (cls) {
+    for (const pc of nkids(cls)) {
+      if (pc.type !== 'primary_constructor') continue;
+      for (const cp of nkids(pc)) if (cp.type === 'class_parameter') note(idName(cp), ktTypeName(typeChild(cp)));
+    }
+    const clsBody = nkids(cls).find((c) => c.type === 'class_body');
+    if (clsBody) for (const m of nkids(clsBody)) if (m.type === 'property_declaration') noteProp(m);
+  }
+  // Function value parameters shadow fields.
+  const params = paramsNode(fnNode);
+  if (params) for (const p of nkids(params)) if (p.type === 'parameter') note(idName(p), ktTypeName(typeChild(p)));
+  // Body locals.
+  walkNamed(body, (n) => {
+    if (n.type === 'property_declaration') noteProp(n);
+  });
+  for (const n of ambiguous) varType.delete(n);
+
+  const out: { method: string; type: string }[] = [];
+  const seen = new Set<string>();
+  walkNamed(body, (n) => {
+    if (n.type !== 'call_expression') return;
+    const callee = nkids(n).find((c) => c.type !== 'call_suffix');
+    if (callee?.type !== 'navigation_expression') return;
+    const method = lastNavIdentifier(callee)?.text;
+    if (!method) return;
+    const recv = nkids(callee)[0];
+    let type: string | null = null;
+    if (recv?.type === 'simple_identifier') type = varType.get(recv.text) ?? null;
+    else if (recv?.type === 'call_expression') {
+      const ctor = nkids(recv).find((c) => c.type !== 'call_suffix');
+      if (ctor?.type === 'simple_identifier') type = ctor.text; // Foo().method()
+    }
+    if (!type) return;
+    const key = `${method}|${type}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ method, type });
+    }
+  });
+  return out;
 }
 
 // ── calls ──

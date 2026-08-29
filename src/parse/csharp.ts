@@ -161,11 +161,13 @@ function fnRecord(node: Node, file: string): FunctionRecord {
   const params = node.childForFieldName('parameters');
   // Body is EITHER a `block` OR an `arrow_expression_clause` (`=> expr`).
   const body = node.childForFieldName('body');
-  const { hash, tokens, literals, sketch } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
+  const { hash, tokens, literals, sketch, defHash } = body ? bodyHash(body, { idTypes: ID_TYPES, litTypes: LIT_TYPES }) : EMPTY_BODY;
   const p = countParams(params);
   const { calls, memberCalls, callSites } = body
     ? collectCalls(body)
     : { calls: [], memberCalls: [], callSites: [] };
+  const typed = body ? collectTypedCallsCs(node, body) : [];
+  const enclosing = enclosingTypeNameCs(node);
   return {
     name: methodName(node),
     file,
@@ -180,10 +182,132 @@ function fnRecord(node: Node, file: string): FunctionRecord {
     bodyTokens: tokens,
     ...(literals === undefined ? {} : { literalHash: literals }),
     ...(sketch === undefined ? {} : { ngramSketch: sketch }),
+    ...(defHash === undefined ? {} : { defHash }),
+    ...(enclosing === undefined ? {} : { enclosingType: enclosing }),
     calls,
     memberCalls,
     callSites,
+    ...(typed.length > 0 ? { typedCalls: typed } : {}),
   };
+}
+
+const CS_TYPE_DECLS = new Set(['class_declaration', 'struct_declaration', 'record_declaration', 'interface_declaration']);
+
+/** The class/struct/record/interface that lexically contains this method. */
+function enclosingTypeNameCs(node: Node): string | undefined {
+  let anc: Node | null = node.parent;
+  while (anc && !CS_TYPE_DECLS.has(anc.type)) anc = anc.parent;
+  return anc ? (anc.childForFieldName('name')?.text ?? undefined) : undefined;
+}
+
+/** Simple type name from a C# type node (drop qualifier, generics, nullable/array).
+ * Null for predefined types (int/string), `var`, and shapes we can't name. */
+function csTypeName(t: Node | null | undefined): string | null {
+  if (!t) return null;
+  let n: Node = t;
+  // `Foo[]` is an array, NOT a Foo — declining avoids binding an array/LINQ method
+  // call to a same-named method on the element type. (`Foo?` really is a Foo.)
+  if (n.type === 'array_type') return null;
+  if (n.type === 'nullable_type') {
+    const inner = n.childForFieldName('type') ?? nkids(n)[0];
+    if (inner) n = inner;
+  }
+  if (n.type === 'identifier') return n.text;
+  if (n.type === 'qualified_name') return lastSegment(n.text, '.');
+  if (n.type === 'generic_name') return (n.childForFieldName('name') ?? nkids(n).find((c) => c.type === 'identifier'))?.text ?? null;
+  return null; // predefined_type / implicit_type
+}
+
+/**
+ * Receiver-typed member calls in a C# method — the SOUND bridge (same graph-layer
+ * class-scoping as Java/Kotlin). Types come from the enclosing type's fields and
+ * properties, the method's parameters, and local declarations (explicit type, or
+ * `new Foo()` for `var`). Records `recv.M()`, `this.field.M()`, and `new Foo().M()`
+ * whose receiver type is known; a name declared with two types is dropped.
+ */
+function collectTypedCallsCs(fnNode: Node, body: Node): { method: string; type: string }[] {
+  const varType = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  const note = (name: string | undefined | null, tn: string | null): void => {
+    if (!name || !tn) return;
+    const prev = varType.get(name);
+    if (prev !== undefined && prev !== tn) ambiguous.add(name);
+    varType.set(name, tn);
+  };
+  const initOCE = (declarator: Node): Node | null => {
+    for (const c of nkids(declarator)) {
+      if (c.type === 'object_creation_expression') return c;
+      if (c.type === 'equals_value_clause') {
+        const oce = nkids(c).find((x) => x.type === 'object_creation_expression');
+        if (oce) return oce;
+      }
+    }
+    return null;
+  };
+  const noteVarDecl = (vd: Node): void => {
+    const typeNode = vd.childForFieldName('type');
+    const isVar = typeNode?.type === 'implicit_type';
+    const declared = csTypeName(typeNode);
+    for (const d of nkids(vd)) {
+      if (d.type !== 'variable_declarator') continue;
+      let tn = declared;
+      if (isVar) {
+        const oce = initOCE(d);
+        if (oce) tn = csTypeName(oce.childForFieldName('type'));
+      }
+      // C# variable_declarator has no `name` field — the name is its first identifier.
+      note(nkids(d).find((c) => c.type === 'identifier')?.text, tn);
+    }
+  };
+
+  // Enclosing type: fields and properties.
+  let cls: Node | null = fnNode.parent;
+  while (cls && !CS_TYPE_DECLS.has(cls.type)) cls = cls.parent;
+  const clsBody = cls?.childForFieldName('body') ?? (cls ? nkids(cls).find((c) => c.type === 'declaration_list') : undefined);
+  if (clsBody) {
+    for (const m of nkids(clsBody)) {
+      if (m.type === 'field_declaration') {
+        const vd = nkids(m).find((c) => c.type === 'variable_declaration');
+        if (vd) noteVarDecl(vd);
+      } else if (m.type === 'property_declaration') {
+        note(m.childForFieldName('name')?.text, csTypeName(m.childForFieldName('type')));
+      }
+    }
+  }
+  // Parameters.
+  const params = fnNode.childForFieldName('parameters');
+  if (params) for (const p of nkids(params)) if (p.type === 'parameter') note(p.childForFieldName('name')?.text, csTypeName(p.childForFieldName('type')));
+  // Local declarations.
+  walkNamed(body, (n) => {
+    if (n.type === 'variable_declaration') noteVarDecl(n);
+  });
+  for (const n of ambiguous) varType.delete(n);
+
+  const out: { method: string; type: string }[] = [];
+  const seen = new Set<string>();
+  walkNamed(body, (n) => {
+    if (n.type !== 'invocation_expression') return;
+    const fnExpr = n.childForFieldName('function') ?? nkids(n)[0];
+    if (fnExpr?.type !== 'member_access_expression') return;
+    const method = fnExpr.childForFieldName('name')?.text;
+    if (!method) return;
+    const recv = fnExpr.childForFieldName('expression') ?? nkids(fnExpr)[0];
+    let type: string | null = null;
+    if (recv?.type === 'identifier') type = varType.get(recv.text) ?? null;
+    else if (recv?.type === 'object_creation_expression') type = csTypeName(recv.childForFieldName('type'));
+    else if (recv?.type === 'member_access_expression') {
+      const inner = recv.childForFieldName('expression') ?? nkids(recv)[0];
+      const fieldName = recv.childForFieldName('name')?.text;
+      if (inner?.type === 'this_expression' && fieldName) type = varType.get(fieldName) ?? null;
+    }
+    if (!type) return;
+    const key = `${method}|${type}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ method, type });
+    }
+  });
+  return out;
 }
 
 /** Method/constructor name via the `name` field. */
