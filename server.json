@@ -8,13 +8,13 @@
     "url": "https://github.com/euthynos-org/euthynos",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "euthynos",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "runtimeHint": "npx",
       "packageArguments": [
         {

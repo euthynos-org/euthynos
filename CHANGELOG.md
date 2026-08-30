@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.2.1 — 2026-08-31
+
+Finishes the two open field-report items and makes the architecture metrics
+language-aware. Same discipline as 0.2.0: every new signal is honestly labelled,
+and a penalty or a clone is withheld rather than guessed when the language or the
+body does not warrant it.
+
+References and clones
+
+- **Enum constants and field accesses are findable (Java).** A constant or field
+  that is referenced but never called — `Status.ACTIVE`, `obj.count` — is now
+  recorded as a non-call access and surfaced by `find_references` under a
+  `field-access` kind, and enum constants are indexed as `const` symbols. These
+  are textual occurrences, labelled as such; they do not create call edges, so
+  the call graph is unaffected.
+- **Low-information bodies no longer register as near-clones.** A near-clone is
+  reported only when a body carries enough distinct structure to mean something
+  (its n-gram sketch saturates, or its gram density clears a floor). Degenerate
+  bodies — a trivial constructor, an all-boilerplate stub — are no longer paired
+  off as duplicates of each other, which was noise a field report flagged.
+
+Architecture metrics (seams)
+
+- **The "no interface file" penalty is scoped to languages that use one.** The
+  seam score only docks a module for lacking an index / barrel file in languages
+  where that is the convention (ts / js / py / vue). A Java or Go package is no
+  longer penalised for not having a file its ecosystem never asks for.
+- **`internal/` boundary bypass is detected in every language.** An import that
+  reaches into an `internal/` directory from outside the scope allowed to import
+  it is reported as a seam bypass — Go's compiler enforces exactly this rule, and
+  it is a recognised convention in JVM and Rust trees. Path-based, so it never
+  mis-reads a symbol's visibility, and legal Go code cannot trigger it.
+
+The on-disk index schema is bumped (v6 → v7): the new field/enum-constant
+references are persisted per function, so an index built by 0.2.0 is rebuilt on
+first use rather than served stale.
+
 ## 0.2.0 — 2026-08-29
 
 Call-graph resolution across languages, plus the change-detection and disclosure

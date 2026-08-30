@@ -61,14 +61,21 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
         if (!usedExports.has(to)) usedExports.set(to, new Set());
         for (const n of imp.named) usedExports.get(to)!.add(n);
 
-        if (!imp.isTypeOnly) {
+        if (!imp.isTypeOnly && !f.isTest) {
           if (!runtimeImports.has(from)) runtimeImports.set(from, new Set());
           runtimeImports.get(from)!.add(to);
 
-          // Seam violation: the target module has an interface file,
-          // but this import reaches a different (internal) file.
+          // Seam violation A (index-file languages): the target module has an
+          // interface file, but this import reaches a different (internal) file.
           const indexes = moduleIndexes.get(to);
-          if (indexes && indexes.size > 0 && !targetFile.isIndex && !f.isTest) {
+          const indexBypass = indexes !== undefined && indexes.size > 0 && !targetFile.isIndex;
+          // Seam violation B (all languages): the import reaches into an
+          // `internal/` directory from outside the scope allowed to import it —
+          // Go enforces exactly this rule, and it is a recognized convention in
+          // JVM/Rust trees too. Path-based, so it never mis-reads a symbol's
+          // visibility; and legal Go code can't trigger it (the compiler already
+          // forbids it), so this only surfaces real bypasses.
+          if (indexBypass || internalBoundaryBypass(f.path, target)) {
             deepImports.push({ fromFile: f.path, toFile: target, toModule: to });
           }
         }
@@ -77,6 +84,23 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
   }
 
   return { imports, importedBy, usedExports, deepImports, fileImports, cycles: findCycles(runtimeImports) };
+}
+
+/**
+ * Go's `internal/` rule (a convention in JVM/Rust trees too): a package under an
+ * `internal/` directory may be imported ONLY by code rooted at that directory's
+ * PARENT. An import reaching a target under `internal/` from OUTSIDE that parent
+ * scope is a boundary bypass. Path-based — never mis-reads a symbol's visibility —
+ * and the Go compiler already forbids the legal-code case, so this surfaces only
+ * real bypasses. Binds to the innermost `internal/` (last segment). A top-level
+ * `internal/` (idx 0) is module-wide importable and never triggers.
+ */
+function internalBoundaryBypass(fromPath: string, targetPath: string): boolean {
+  const segs = targetPath.split('/');
+  const idx = segs.lastIndexOf('internal');
+  if (idx <= 0) return false;
+  const allowed = segs.slice(0, idx).join('/'); // the directory CONTAINING internal/
+  return !(fromPath === allowed || fromPath.startsWith(`${allowed}/`));
 }
 
 export function resolveRelative(

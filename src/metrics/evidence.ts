@@ -1,3 +1,5 @@
+import { langOf } from '../discover.js';
+import { INTERFACE_FILE_LANGS } from './seams.js';
 import type {
   EvidenceItem,
   GitHistory,
@@ -121,11 +123,14 @@ function depthEvidence(mod: ModuleInfo): EvidenceItem[] {
 function seamsEvidence(mod: ModuleInfo, graph: ModuleGraph): EvidenceItem[] {
   const items: EvidenceItem[] = [];
 
+  const usesInterfaceFiles = mod.files.some((f) => INTERFACE_FILE_LANGS.has(langOf(f.path)));
   if (mod.hasInterfaceFile) {
     items.push({ kind: 'interface-file', text: 'an index file defines the public surface', effect: 'credit' });
-  } else {
+  } else if (usesInterfaceFiles) {
     items.push({ kind: 'no-interface-file', text: 'no interface (index) file — nothing marks the public surface (-35 pts)', effect: 'penalty' });
   }
+  // Languages without an interface-file convention (Java/C#/Go/...) are not
+  // penalised for lacking one — their boundary is visibility-based.
 
   const deep = graph.deepImports.filter((d) => d.toModule === mod.name);
   for (const d of deep.slice(0, CAP)) {

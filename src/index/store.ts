@@ -42,6 +42,11 @@ import type { ParsedFile } from '../types.js';
 
 /**
  * Bump when the on-disk shape or the parse output changes meaning.
+ * v7: FunctionRecord gained `fieldRefs` (non-call member/field accesses, feeding
+ *   find_references), and the Java parser now records enum constants as `const`
+ *   symbols and field accesses. A v6 artifact carries neither, so a stale index
+ *   would return empty references for an enum constant or field that 0.2.1 finds —
+ *   silently wrong until a rebuild, which the bump forces.
  * v6: FunctionRecord gained `defHash` (rename-sensitive body hash, all parsers).
  *   A v5 artifact carries no defHash, so its persisted current records would use
  *   the fallback signature while freshly-parsed HEAD blobs use defHash — the two
@@ -62,7 +67,7 @@ import type { ParsedFile } from '../types.js';
  * non-TS parsers gained symbols/callSites/totalLines — a v1 artifact would
  * make a Go repo look like it had no types.
  */
-export const INDEX_SCHEMA_VERSION = 6;
+export const INDEX_SCHEMA_VERSION = 7;
 
 export interface FileState {
   size: number;

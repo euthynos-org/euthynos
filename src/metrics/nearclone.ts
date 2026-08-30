@@ -58,6 +58,21 @@ export interface NearCloneFinding {
  */
 const LITERAL_DRIFT_MIN_TOKENS = 3;
 const STRUCTURAL_MIN_TOKENS = 12;
+/**
+ * Low-information floor for the structural tier, measured as distinct-4-gram
+ * DENSITY (`ngramSketch.length / bodyTokens`). A body whose normalized stream is
+ * one short repeating cycle — a field→field constructor, a `toString`/`equals`
+ * fold, a builder chain — clears STRUCTURAL_MIN_TOKENS on length but its distinct
+ * structure stays a short cycle, so its sketch never approaches saturation (24)
+ * while its token count grows. That is exactly how every field-assignment
+ * constructor became a "99% near-clone" of every other. This measures the SAME
+ * normalized stream all 16 parsers already produce — never a per-language kind
+ * list. Calibrated on real Java bodies: the degenerate class tops out at density
+ * ~0.31 (an 8-field constructor sits at 0.16, a `toString` at 0.26); genuine
+ * bodies either SATURATE the sketch (>=24 distinct grams, so this gate is a
+ * no-op) or, when short, run at density >=0.55. The 0.35 floor sits in that gap.
+ */
+const STRUCTURAL_MIN_GRAM_DENSITY = 0.35;
 /** Sketch-Jaccard threshold for the structural tier (initial calibration). */
 const STRUCTURAL_MIN_SIMILARITY = 0.72;
 /** Name-token Jaccard required to treat two names as "the same concept". */
@@ -168,9 +183,16 @@ export function detectAllNearClones(files: readonly ParsedFile[]): NearCloneFind
   // Inverted index over sketch values bounds candidate pairs without an
   // O(n^2) sweep: only pairs sharing >= 3 sketch values are compared.
   const bySketchValue = new Map<number, FunctionRecord[]>();
-  const sketchable = fns.filter(
-    (fn) => fn.bodyTokens >= STRUCTURAL_MIN_TOKENS && fn.ngramSketch !== undefined && fn.ngramSketch.length > 0,
-  );
+  const sketchable = fns.filter((fn) => {
+    if (fn.bodyTokens < STRUCTURAL_MIN_TOKENS || fn.ngramSketch === undefined || fn.ngramSketch.length === 0) return false;
+    // Drop low-information bodies (repetitive constructors / folds) whose sketch
+    // is unsaturated AND whose distinct-gram density is below the floor. A
+    // saturated sketch (>=24) is information-rich by construction and always
+    // kept; a short but genuine body runs at high density and is kept too.
+    const grams = fn.ngramSketch.length;
+    if (grams < 24 && grams / fn.bodyTokens < STRUCTURAL_MIN_GRAM_DENSITY) return false;
+    return true;
+  });
   for (const fn of sketchable) {
     for (const v of fn.ngramSketch!) {
       const list = bySketchValue.get(v);

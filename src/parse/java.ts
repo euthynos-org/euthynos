@@ -4,7 +4,7 @@ import type { DiscoveredFile } from '../discover.js';
 import type { CallSite, ExportedSymbol, FunctionRecord, ImportRecord, ParsedFile, SymbolSpan } from '../types.js';
 import { parseWith } from './treesitter/loader.js';
 import {
-  bodyHash, EMPTY_BODY, ckids, collectSymbolSpans, countCodeLines, deriveCalls, fieldText,
+  bodyHash, EMPTY_BODY, ckids, collectSymbolSpans, countCodeLines, deriveCalls, endLineOf, fieldText,
   lastSegment, lineOf, nkids, totalLinesOf, walkNamed,
 } from './treesitter/util.js';
 
@@ -94,9 +94,34 @@ export function parseJavaSource(
     internalFunctions,
     functions,
     imports,
-    symbols: collectSymbolSpans(root, { kinds: SPAN_KINDS, exported: (_n, node) => isPublic(node) }),
+    symbols: [
+      ...collectSymbolSpans(root, { kinds: SPAN_KINDS, exported: (_n, node) => isPublic(node) }),
+      ...collectEnumConstants(root),
+    ],
     totalLines: totalLinesOf(text),
   };
+}
+
+/**
+ * Enum constants as `const` symbols, so `find_references` can locate the
+ * DEFINITION of `P8_DOC_ID` (the enclosing enum's TYPE is already a symbol, but
+ * the constant was invisible). Exported iff the enclosing enum is public.
+ */
+function collectEnumConstants(root: Node): SymbolSpan[] {
+  const out: SymbolSpan[] = [];
+  walkNamed(root, (n) => {
+    if (n.type !== 'enum_declaration') return;
+    const exported = isPublic(n);
+    const body = n.childForFieldName('body');
+    if (!body) return;
+    for (const c of nkids(body)) {
+      if (c.type !== 'enum_constant') continue;
+      const name = c.childForFieldName('name')?.text;
+      if (!name) continue;
+      out.push({ name, kind: 'const', startLine: lineOf(c), endLine: endLineOf(c), exported });
+    }
+  });
+  return out;
 }
 
 // ── exports / symbols ──
@@ -170,7 +195,32 @@ function fnRecord(node: Node, file: string): FunctionRecord {
     ...(enclosing === undefined ? {} : { enclosingType: enclosing }),
     ...deriveCalls(body ? collectCallSites(body) : []),
     ...(typed.length > 0 ? { typedCalls: typed } : {}),
+    ...(() => {
+      const refs = body ? collectFieldRefs(body) : [];
+      return refs.length > 0 ? { fieldRefs: refs } : {};
+    })(),
   };
+}
+
+/**
+ * Non-call member accesses `X.Y` (`DedupKeyMode.P8_DOC_ID`, `obj.field`) as
+ * occurrences of Y. A `field_access` node is a member access that is NOT a call
+ * (method calls are `method_invocation`), so this never double-counts a call.
+ * Deduped by name+line.
+ */
+function collectFieldRefs(body: Node): CallSite[] {
+  const out: CallSite[] = [];
+  const seen = new Set<string>();
+  walkNamed(body, (n) => {
+    if (n.type !== 'field_access') return;
+    const field = n.childForFieldName('field');
+    if (!field) return;
+    const key = `${field.text}|${lineOf(field)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name: field.text, line: lineOf(field), member: true });
+  });
+  return out;
 }
 
 /** The class/interface/enum whose body immediately contains this method. */

@@ -88,6 +88,14 @@ export interface FunctionRecord {
   /** Every call with its exact line — the source of reference locations. */
   callSites?: CallSite[];
   /**
+   * Non-call member/field ACCESSES in the body — `Type.CONST`, `obj.field` — as
+   * occurrences of the accessed name (member=true). Distinct from `callSites`
+   * (which are invocations) so the call graph is unaffected; this feeds
+   * `find_references` so an enum constant or field, referenced but never called,
+   * is findable. A textual occurrence, honestly labelled, not a resolved binding.
+   */
+  fieldRefs?: CallSite[];
+  /**
    * The immediately-enclosing type (class / interface / enum) that declares this
    * method, when the parser records it. Lets the resolver bind a receiver call to
    * the method DECLARED ON the receiver's class — not merely defined somewhere in

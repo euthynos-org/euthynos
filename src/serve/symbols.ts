@@ -149,7 +149,7 @@ export interface ReferenceHit {
   file: string;
   /** null when the parser for this language does not record the location. */
   line: number | null;
-  kind: 'call' | 'member-call' | 'import' | 'definition';
+  kind: 'call' | 'member-call' | 'import' | 'definition' | 'field-access';
   /** The enclosing function, when the reference is a call. */
   inFunction?: string;
 }
@@ -190,6 +190,12 @@ export function findReferences(files: ParsedFile[], name: string): ReferenceHit[
           kind: site.member ? 'member-call' : 'call',
           inFunction: fn.name,
         });
+      }
+      // Non-call accesses (`Type.CONST`, `obj.field`) — how an enum constant or a
+      // field, referenced but never invoked, is found.
+      for (const ref of fn.fieldRefs ?? []) {
+        if (ref.name !== name) continue;
+        add({ file: f.path, line: ref.line, kind: 'field-access', inFunction: fn.name });
       }
     }
     for (const imp of f.imports) {
