@@ -279,7 +279,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: euthynos-org/euthynos/action@main
+      - uses: euthynos-org/euthynos/action@v0.3.0
         with:
           mode: ratchet       # observe (default) · ratchet · block
 ```

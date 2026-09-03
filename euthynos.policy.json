@@ -1,0 +1,22 @@
+{
+  "defaultMode": "warn",
+  "rules": [
+    { "id": "health-no-regression", "type": "health-delta", "maxDrop": 3, "mode": "block" },
+    { "id": "no-more-duplication", "type": "contamination-delta", "maxRise": 0, "mode": "block" },
+    { "id": "no-new-clones", "type": "no-new-duplication", "mode": "block" },
+
+    { "id": "parse-never-imports-mcp", "type": "forbidden-dependency",
+      "from": "parse/*", "to": "mcp", "mode": "block",
+      "message": "Parsers are the bottom layer; they must not depend on the MCP server." },
+    { "id": "graph-never-imports-mcp", "type": "forbidden-dependency",
+      "from": "graph", "to": "mcp", "mode": "block",
+      "message": "The graph is engine core; the server sits above it." },
+    { "id": "metrics-never-imports-mcp", "type": "forbidden-dependency",
+      "from": "metrics", "to": "mcp", "mode": "block" },
+    { "id": "policy-never-imports-mcp", "type": "forbidden-dependency",
+      "from": "policy", "to": "mcp", "mode": "block",
+      "message": "The policy engine must stay usable without the server (the CLI and the worker run it directly)." },
+    { "id": "policy-never-imports-serve", "type": "forbidden-dependency",
+      "from": "policy", "to": "serve", "mode": "block" }
+  ]
+}
