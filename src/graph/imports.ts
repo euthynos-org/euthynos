@@ -1,4 +1,4 @@
-import type { DeepImport, ModuleGraph, ParsedFile } from '../types.js';
+import type { DeepImport, ImportEdge, ModuleGraph, ParsedFile, UnresolvedImport } from '../types.js';
 
 const RESOLVE_SUFFIXES = [
   '', '.ts', '.tsx', '.js', '.jsx', '.mts', '.mjs',
@@ -18,6 +18,10 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
   const usedExports = new Map<string, Set<string>>();
   const deepImports: DeepImport[] = [];
   const fileImports = new Map<string, Set<string>>();
+  const importEdges: ImportEdge[] = [];
+  const unresolvedSample: UnresolvedImport[] = [];
+  let unresolvedCount = 0;
+  let externalCount = 0;
 
   const moduleIndexes = new Map<string, Set<string>>();
   for (const f of files) {
@@ -37,9 +41,59 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
       // Relative specifiers resolve by path; module-path specifiers (Go / Java /
       // Rust / PHP / Kotlin / C / C++ packages) resolve by longest unambiguous
       // suffix against the repo's file/directory index.
-      const target = imp.specifier.startsWith('.')
-        ? resolveRelative(f.path, imp.specifier, byPath)
-        : resolveModulePath(imp.specifier, suffixIndex, f.path, byPath);
+      //
+      // JS-ecosystem files (TS/JS/Vue) are the exception: a NON-relative
+      // specifier there is a package (`redis`, `@prisma/client`, `next/router`)
+      // or a tsconfig path alias the engine does not read — never a local
+      // source file (node_modules is skipped at discovery). Routing it through
+      // the suffix resolver let `import 'redis'` bind to a coincidental local
+      // `db/redis.ts` and surface as a real file:line boundary violation. So
+      // it is left UNRESOLVED (no edge): a disclosed safe miss, never a
+      // phantom crossing. Every other consumer of these records already
+      // refuses non-relative JS specifiers for this reason.
+      let target: string | null;
+      if (imp.specifier.startsWith('.')) {
+        // A relative import that binds to nothing is usually a non-code
+        // asset (.json/.css) or a file excluded by ignore/parse-skip; the
+        // parse-skip case is disclosed via ScanReport.skippedFiles, so it is
+        // not double-counted here.
+        target = resolveRelative(f.path, imp.specifier, byPath);
+      } else if (JS_ECOSYSTEM_RE.test(f.path)) {
+        target = null;
+        externalCount++;
+      } else {
+        target = resolveModulePath(imp.specifier, suffixIndex, f.path, byPath);
+        if (!target) {
+          const segs = specSegments(imp.specifier);
+          const first = segs[0] ?? '';
+          // "Dotted" = a JVM / .NET package path: dot-separated, no path
+          // separators. A bare single word (`fmt`) is NOT dotted — it has no
+          // separator at all — so the language rules below get to judge it.
+          const dotted = imp.specifier.includes('.') && !/[/\\]|::/.test(imp.specifier);
+          if (segs.length === 0 || STDLIB_ROOTS.has(first)) {
+            // A known standard-library root: an expected miss, not a gap.
+          } else if (/\.go$/.test(f.path) && !first.includes('.')) {
+            // Go: an import path whose first element has no dot is the
+            // standard library by convention (`fmt`, `net/http`). Checked
+            // before the dotted rule so `fmt` is never read as a package.
+          } else if (dotted) {
+            // A dotted (JVM / .NET) specifier that matched no local file is,
+            // by construction, an external package — a local package would
+            // have matched by suffix. Same class as a JS bare specifier:
+            // counted as external, never presented as something unjudged.
+            // (A 50-file Spring app otherwise reported "315 unresolved".)
+            externalCount++;
+          } else {
+            // A path-style module import that matched nothing is a crossing
+            // the graph cannot see. Counted, so a boundary verdict can say
+            // what it did not judge.
+            unresolvedCount++;
+            if (unresolvedSample.length < UNRESOLVED_SAMPLE_CAP) {
+              unresolvedSample.push({ fromFile: f.path, ...(imp.line !== undefined ? { line: imp.line } : {}), specifier: imp.specifier });
+            }
+          }
+        }
+      }
       if (!target) continue;
       const targetFile = byPath.get(target)!;
       const from = f.module;
@@ -57,6 +111,22 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
         imports.get(from)!.add(to);
         if (!importedBy.has(to)) importedBy.set(to, new Set());
         importedBy.get(to)!.add(from);
+
+        // The statement itself, with its line, for boundary rules. Recorded
+        // for EVERY cross-module import — type-only and test-file imports
+        // included, flagged — so the policy rule (not the graph) decides
+        // what counts. Files arrive in discovery order (siblings byte-sorted,
+        // see discover.ts) and imports in source order, so this list is the
+        // same on every OS for a given tree.
+        importEdges.push({
+          fromFile: f.path,
+          fromModule: from,
+          ...(imp.line !== undefined ? { line: imp.line } : {}),
+          toFile: target,
+          toModule: to,
+          isTypeOnly: imp.isTypeOnly,
+          fromIsTest: f.isTest,
+        });
 
         if (!usedExports.has(to)) usedExports.set(to, new Set());
         for (const n of imp.named) usedExports.get(to)!.add(n);
@@ -83,7 +153,12 @@ export function buildGraph(files: ParsedFile[]): ModuleGraph {
     }
   }
 
-  return { imports, importedBy, usedExports, deepImports, fileImports, cycles: findCycles(runtimeImports) };
+  return {
+    imports, importedBy, usedExports, deepImports, fileImports, importEdges,
+    unresolvedImports: { count: unresolvedCount, sample: unresolvedSample },
+    externalImports: externalCount,
+    cycles: findCycles(runtimeImports),
+  };
 }
 
 /**
@@ -141,6 +216,10 @@ interface SuffixIndex {
 }
 
 const CODE_EXT_RE = /\.(tsx?|mts|cts|jsx?|mjs|cjs|py|go|java|rb|rs|php|c|h|cpp|cc|cxx|hpp|hh|hxx|cs|dart|kts?|swift|vue|cob|cbl|cpy)$/;
+/** Files whose non-relative imports name packages/aliases, not local sources. */
+const JS_ECOSYSTEM_RE = /\.(tsx?|mts|cts|jsx?|mjs|cjs|vue)$/;
+/** Unresolved-import sample kept in the report; the count is exact, the sample bounded. */
+const UNRESOLVED_SAMPLE_CAP = 20;
 /** Module paths rarely run deeper than this; bounding keeps the index small. */
 const MAX_SUFFIX = 6;
 /**

@@ -1,5 +1,79 @@
 # Changelog
 
+## 0.3.0 — 2026-09-04
+
+The policy engine becomes a CI gate. Same discipline throughout: a verdict is
+reproducible, a violation names the exact line and states a fix read off the
+report itself, and anything the engine could *not* judge is disclosed rather
+than read as a pass.
+
+The gate
+
+- **`forbidden-dependency` rule** — "module A may not import module B", with
+  `from`/`to` module globs, an `allowedVia` route, and opt-ins for type-only
+  and test-file imports. Judged from the resolved cross-module import
+  statements the graph already builds, now carried in the report as
+  `importEdges` (with the line) so a stored report can be gated.
+- **Localized violations.** A finding carries `location` (file, line) and a
+  deterministic `remedy`: a reroute through a file that already reaches the
+  target via the allowed route (never invented; honest text when none is
+  visible), a removal, or an extract-shared for a new clone pair — whose
+  *new* side is decided from the base (clone membership, then file
+  presence) and declared unknown, with no location, when it cannot be.
+  `no-new-duplication` now emits one finding per pair.
+- **`--scope diff`** — only violations this change *introduced* may block;
+  pre-existing debt is reported, never punished. Identity is a line-stable
+  fingerprint. Needs `--base`; without one it degrades to observe and says so.
+- **Outputs**: `--sarif` (SARIF 2.1.0 for Code Scanning, alerts tracked across
+  commits by the same fingerprint), `--check-run` (a Checks-API payload whose
+  conclusion mirrors the exit code exactly), plus the existing `--json`/`--md`.
+- **Exit-code contract**: `0` passed or observe · `1` blocked, only under
+  `--strict` · `2` policy config error — a malformed rule is recorded, never
+  thrown from the pure evaluator, and never wears a verdict's exit code.
+- **Policy-as-code**: `euthynos.policy.json` at the repository root, picked up
+  automatically by the CLI and the Action. (Not inside `.euthynos/`, which
+  ignores itself and would never reach CI.)
+- **Action v2** (`action/`): modes `observe` (default, never fails) ·
+  `ratchet` · `block`; base report from the Actions cache (saved on pushes to
+  the default branch) or a direct scan of the base ref; Check Run on the PR
+  head, SARIF upload, sticky comment, decision artifact; an Enforce step that
+  applies the exit code only outside observe mode.
+
+Disclosures the gate now makes
+
+- Rules that could not run are counted, never passed: no import edges in an
+  older report, a base whose duplicate-pair list is not provably complete
+  (`pairKeys` is now stored uncapped), a glob that names no module the report
+  can see (which is also how `moduleOf` folding two layers into one module
+  surfaces), files that failed to parse, unresolved imports.
+
+Fixes surfaced by adversarial review of the above
+
+- Bare JS/TS package imports (`'redis'`) no longer resolve to a
+  coincidentally-named local file; they are external by design and counted.
+- `import { type A }` is recognised as type-only.
+- Discovery order is byte-sorted per directory, so findings are the same on
+  every OS.
+- A boolean CLI flag no longer swallows the path after it (`policy --strict
+  repo/` used to scan the current directory instead).
+- Clone-pair locations point at the declaration; markdown cells escape `_`/`*`;
+  `check_my_changes` discloses elided rows and prints remedies.
+- A tree that scans as a single module (a root that *holds* the project one
+  level down) now says so on every surface — cross-module rules cannot fire
+  there, and a vacuous pass was previously silent.
+- Imports that cannot bind to a local file are classified honestly: dotted
+  JVM/.NET specifiers with no local match and JS bare specifiers are
+  *external dependencies* (a 50-file Spring app no longer reports "315
+  unresolved"); Go paths with no dot in the first element are stdlib; only
+  path-style module imports that match nothing are reported as unresolved.
+
+Test infrastructure
+
+- Tests' temp repositories no longer spawn Git's detached `fsmonitor--daemon`
+  (Git for Windows can enable it system-wide): one long session accumulated
+  455 of them and ~17 GB of commit charge, which surfaced as worker crashes.
+  `vitest.config.ts` now overrides `core.fsmonitor=false` for every child git.
+
 ## 0.2.1 — 2026-08-31
 
 Finishes the two open field-report items and makes the architecture metrics

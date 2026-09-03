@@ -1,16 +1,24 @@
-# Dogfood: run the Euthynos action against this repo on every PR.
+# Dogfood: the Euthynos policy gate on this repository.
+#
+# Pull requests are judged in RATCHET mode - only violations a PR introduces
+# can fail it; pre-existing debt is reported, never punished. Pushes to main
+# refresh the base report the ratchet compares against.
 
-name: Euthynos scan
+name: Euthynos policy gate
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
   pull-requests: write
+  checks: write
+  security-events: write
 
 jobs:
-  scan:
+  gate:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -20,5 +28,7 @@ jobs:
           # has data; the default depth of 1 would leave it empty.
           fetch-depth: 0
 
-      - name: Euthynos scan scan
+      - name: Euthynos policy gate
         uses: ./action
+        with:
+          mode: ratchet

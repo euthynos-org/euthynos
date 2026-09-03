@@ -118,6 +118,13 @@ export function discoverFiles(
     } catch {
       return;
     }
+    // readdir order is filesystem-dependent (inode order on ext4, name order
+    // on NTFS/APFS). Everything downstream — module ordering, which file an
+    // ambiguous suffix resolves to, contamination tie-breaks, import-edge and
+    // policy-violation order — inherits it. A deterministic engine cannot
+    // depend on the OS, so siblings are sorted by UTF-16 code unit: locale-
+    // free, the same on every machine. (Never localeCompare here.)
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const name = entry.name;
       if (name.startsWith('.') && name !== '.') continue;

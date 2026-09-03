@@ -150,6 +150,12 @@ export function scan(rootInput: string, opts: ScanOptions = {}): ScanReport {
     gitAvailable: git.available,
     ...(skipped.length > 0 ? { skippedFiles: skipped.slice(0, 50) } : {}),
     ...(discoveryMeta.truncated === true ? { discoveryTruncated: true } : {}),
+    // Inside the report on purpose: the gate evaluates stored reports, and a
+    // boundary verdict must be able to say what it could NOT judge.
+    importEdges: graph.importEdges,
+    unresolvedImports: graph.unresolvedImports,
+    externalImports: graph.externalImports,
+    files: parsed.map((f) => f.path),
     graph: {
       nodes: modules.length,
       edges: [...graph.imports.values()].reduce((n, tos) => n + tos.size, 0),

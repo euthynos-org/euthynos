@@ -197,12 +197,56 @@ export interface ModuleGraph {
    * classes the caller's file imports — never the whole repo.
    */
   fileImports: Map<string, Set<string>>;
+  /** Every resolved cross-module import statement, with its line (see ImportEdge). */
+  importEdges: ImportEdge[];
+  /**
+   * Imports the graph could NOT bind to a local file. `externalImports`
+   * counts the ones that are external DEPENDENCIES by construction — JS
+   * bare specifiers (packages / unread aliases) and dotted JVM/.NET
+   * specifiers that matched no local file (a local package would have
+   * matched by suffix). `unresolvedImports` counts the rest: path-style
+   * module imports (Go non-stdlib, Rust, C-family includes) that matched
+   * nothing — crossings the graph cannot see and must not claim, with a
+   * capped sample so a boundary verdict can say what it did not judge.
+   */
+  unresolvedImports: { count: number; sample: UnresolvedImport[] };
+  externalImports: number;
+}
+
+export interface UnresolvedImport {
+  fromFile: string;
+  line?: number;
+  specifier: string;
 }
 
 export interface DeepImport {
   fromFile: string;
   toFile: string;
   toModule: string;
+}
+
+/**
+ * One resolved, CROSS-MODULE import statement — the unit an architecture
+ * boundary rule (`forbidden-dependency`) judges. Intra-module imports are
+ * not recorded: a boundary is by definition a crossing between two modules,
+ * so an import that stays inside one module can never violate one, and
+ * leaving them out keeps the list O(cross-module statements) rather than
+ * O(all imports). The list is deliberately UNCAPPED: the stored-report gate
+ * needs every crossing, and a cap would turn a real violation into a silent
+ * pass — the one outcome this engine refuses.
+ * `isTypeOnly` / `fromIsTest` are carried rather than filtered here so the
+ * rule decides (an `import type` is erased at compile time; a test may
+ * legitimately reach across a boundary) — the graph records, the policy judges.
+ */
+export interface ImportEdge {
+  fromFile: string;
+  fromModule: string;
+  /** Line of the import statement, when the parser records it. */
+  line?: number;
+  toFile: string;
+  toModule: string;
+  isTypeOnly: boolean;
+  fromIsTest: boolean;
 }
 
 export interface CoChangeStats {
@@ -378,6 +422,15 @@ export interface ScanReport {
     violations: number;
     /** Every function-node id (`fn:file#name`) that is a structural clone (any body-hash group >=2, incl. in-module + beyond top-20). O(1) "is this a clone?" for downstream features. */
     cloneFnIds: string[];
+    /**
+     * UNCAPPED identity of every cross-module finding (`file:name|file:name`,
+     * sorted), so "new vs base" is decided against the whole set, not the
+     * 20-row presentation list — a pair that sat just past the base's cap and
+     * rose into the head's top rows is not "introduced". Optional: reports
+     * serialized before this field lack it; the policy engine then uses only
+     * what it can prove complete and counts the rest as skipped.
+     */
+    pairKeys?: string[];
   };
   health: { score: number; label: string };
   averages: {
@@ -390,6 +443,29 @@ export interface ScanReport {
   gitAvailable: boolean;
   /** Module import-graph shape. Optional: reports serialized before this field lack it. */
   graph?: { nodes: number; edges: number; cycles: number };
+  /**
+   * Resolved cross-module import statements with file:line — the input to
+   * `forbidden-dependency` policy rules. Lives INSIDE the report (not passed
+   * alongside it) because the gate evaluates STORED reports (`policy --head
+   * report.json`); a rule that needed data outside the report could not run
+   * from a stored one. Optional: reports serialized before this field lack it,
+   * and the policy engine counts (never silently passes) rules it cannot
+   * evaluate for that reason.
+   */
+  importEdges?: ImportEdge[];
+  /** Imports the graph could not bind to a local file (see ModuleGraph). Optional: older reports lack it. */
+  unresolvedImports?: { count: number; sample: UnresolvedImport[] };
+  /** Imports that are external dependencies by construction (see ModuleGraph). Optional: older reports lack it. */
+  externalImports?: number;
+  /**
+   * Every parsed file, repo-relative, in discovery order (siblings byte-sorted).
+   * The report otherwise carries only COUNTS of files, which left one question
+   * a gate must answer unanswerable from a stored base: "did this file exist
+   * before the change?" — the fact that decides which copy of a new clone pair
+   * is the new one. Optional: older reports lack it, and a rule that needs it
+   * says so rather than guessing.
+   */
+  files?: string[];
   /**
    * Files discovered but NOT parsed (capped at 50). Present only when
    * something was skipped: a dropped file is invisible to every query, so

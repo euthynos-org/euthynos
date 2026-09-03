@@ -1,24 +1,50 @@
-# Euthynos composite action: runs the architecture scan over a
-# consumer repository's checkout and posts the resulting report back
-# as a sticky pull request comment.
+# Euthynos composite action, v2: the architecture POLICY GATE.
 #
-# This file lives in action/, one level BELOW the action repo root that
-# holds package.json and src/. Every run step therefore works inside
-# "${{ github.action_path }}/.." (passed to bash via env, never
-# interpolated into the script body).
+# v1 ran `scan` and always exited 0 - a commenter, not a gate. v2 runs
+# `policy` and can gate a merge, on three rungs the consumer chooses:
 #
-# The SCANNED tree is the consumer's checkout: ${{ github.workspace }}/<path>.
-# Exit code is always 0 by design: observe, don't block.
+#   observe (default)  report everything; NEVER fails the build
+#   ratchet            fail only on violations this PR INTRODUCED (diff scope);
+#                      pre-existing debt is reported, never punished
+#   block              fail on any block-mode violation, new or old
+#
+# A team should be able to turn this on at 9am and still be shipping at 10am:
+# observe is the default, ratchet needs a base report and degrades to observe
+# (and says so) when it has none, block is an explicit opt-in.
+#
+# Four outputs, one of which can gate:
+#   Check Run     - the ONLY surface branch protection can require. Its
+#                   conclusion mirrors the CLI exit code exactly.
+#   SARIF         - GitHub Code Scanning: Security tab + inline alerts, tracked
+#                   across commits by line-stable fingerprints.
+#   sticky comment- the human-readable verdict, upserted on the PR.
+#   artifacts     - the decision JSON (`euthynos-policy.json`) for downstream tools.
+#
+# Base reports for the ratchet: a push to the default branch saves its report
+# to the Actions cache; a PR restores the newest one. On a miss the base ref is
+# scanned directly. If that is impossible too, the gate reports and does not
+# block - it never silently passes.
+#
+# Exit code contract (the CLI's, honoured here): 0 passed/observe - 1 blocked
+# - 2 policy config error. In observe mode a config error is surfaced as an
+# error annotation and in the Check Run (conclusion: failure) but does not
+# fail the job, so "observe cannot fail a build" stays literally true.
+#
+# This file lives in action/, one level BELOW the action repo root that holds
+# package.json and src/. Run steps cd to "${{ github.action_path }}/.." via env
+# (never interpolated into the script body). The SCANNED tree is the consumer
+# checkout: ${{ github.workspace }}/<path>.
 
-name: Euthynos Architecture Scan
+name: Euthynos Policy Gate
 description: >-
-  Deterministic architecture metrics for your repository (module depth,
-  seam health, locality, leverage, contamination) computed from ASTs, the
-  import graph, and git history, then posted as a sticky pull request
-  comment. Observe, don't block - the scan never fails your build.
+  Deterministic architecture policy gate for pull requests: forbidden
+  dependencies, duplication and health regressions, judged from ASTs and the
+  import graph - no model in the verdict. Observe by default; ratchet (only
+  what a PR introduced) or block on opt-in. Posts a Check Run, SARIF, and a
+  sticky comment.
 
 branding:
-  icon: activity
+  icon: shield
   color: purple
 
 inputs:
@@ -26,18 +52,50 @@ inputs:
     description: Path inside the consumer workspace to scan, relative to the repository root.
     required: false
     default: '.'
+  mode:
+    description: "observe | ratchet | block (see the header for what each may fail)."
+    required: false
+    default: 'observe'
+  policy:
+    description: >-
+      Policy file, relative to `path`. Lives at the repository ROOT on purpose:
+      `.euthynos/` is the local index and ignores itself entirely, so a policy
+      placed there would never reach CI. When the file is absent the built-in
+      ratchet policy is used (health may not drop, duplication may not rise,
+      no new clone pairs) and the log says so.
+    required: false
+    default: 'euthynos.policy.json'
+  comment:
+    description: Set to 'false' to skip the sticky PR comment.
+    required: false
+    default: 'true'
+  check-run:
+    description: Set to 'false' to skip creating the Check Run (the gating surface).
+    required: false
+    default: 'true'
+  sarif:
+    description: Set to 'false' to skip uploading SARIF to Code Scanning.
+    required: false
+    default: 'true'
   months:
     description: Git history window in months used by the locality metric.
     required: false
     default: '6'
-  comment:
-    description: Set to 'false' to skip posting the sticky PR comment.
-    required: false
-    default: 'true'
   github-token:
-    description: Token used to list, create, and update PR comments (needs pull-requests write permission).
+    description: >-
+      Token for comments, Check Runs and SARIF upload. Needs pull-requests:write,
+      checks:write and security-events:write; fork PRs get a read-only token and
+      those steps degrade to warnings.
     required: false
     default: '${{ github.token }}'
+
+outputs:
+  exit-code:
+    description: "The policy CLI exit code: 0 passed/observe, 1 blocked, 2 config error."
+    value: ${{ steps.policy.outputs.exit-code }}
+  conclusion:
+    description: "The Check Run conclusion: success | neutral | failure."
+    value: ${{ steps.policy.outputs.conclusion }}
 
 runs:
   using: composite
@@ -47,88 +105,205 @@ runs:
       with:
         node-version: '20'
 
-    - name: Run Euthynos scan
+    - name: Install Euthynos
       shell: bash
       env:
-        CH_ACTION_PATH: ${{ github.action_path }}
-        CH_SCAN_PATH: ${{ inputs.path }}
-        CH_MONTHS: ${{ inputs.months }}
+        EU_ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-
-        # Install and run the CLI from the action repo root (one level
-        # above action/). tsx is a devDependency, so plain `npm ci` is
-        # required - do not add --omit=dev.
-        cd "${CH_ACTION_PATH}/.."
+        # tsx is a devDependency, so plain `npm ci` is required (no --omit=dev).
+        cd "${EU_ACTION_PATH}/.."
         npm ci --no-audit --no-fund
 
-        npx tsx src/cli.ts scan "${GITHUB_WORKSPACE}/${CH_SCAN_PATH}" \
-          --md "${RUNNER_TEMP}/contexthub.md" \
-          --json "${RUNNER_TEMP}/contexthub.json" \
-          --months "${CH_MONTHS}" \
-          --quiet
+    # -- Base report: newest default-branch report from cache, else scan base --
+    - name: Restore base report from cache
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/euthynos-base.json
+        # No exact key on purpose: the prefix below restores the NEWEST report
+        # saved by a push to the base branch.
+        key: euthynos-report-${{ github.base_ref }}-never-exact
+        restore-keys: |
+          euthynos-report-${{ github.base_ref }}-
 
-    - name: Prepend changed modules to the report
+    - name: Scan the base ref (cache miss)
       if: github.event_name == 'pull_request'
       shell: bash
       env:
-        CH_BASE_REF: ${{ github.base_ref }}
-        CH_SCAN_PATH: ${{ inputs.path }}
+        EU_ACTION_PATH: ${{ github.action_path }}
+        EU_SCAN_PATH: ${{ inputs.path }}
+        EU_BASE_REF: ${{ github.base_ref }}
+        EU_MONTHS: ${{ inputs.months }}
       run: |
         set -euo pipefail
-
-        # Push events (or anything without a base ref) have nothing to
-        # diff against: skip gracefully.
-        if [ -z "${CH_BASE_REF}" ]; then
-          echo "No base ref on this event - skipping changed-module summary."
+        base_json="${RUNNER_TEMP}/euthynos-base.json"
+        if [ -s "${base_json}" ]; then
+          echo "Base report restored from cache."
           exit 0
         fi
-
-        repo_dir="${GITHUB_WORKSPACE}/${CH_SCAN_PATH}"
-        md_file="${RUNNER_TEMP}/contexthub.md"
-
-        if [ ! -f "${md_file}" ]; then
-          echo "No report found at ${md_file} - skipping changed-module summary."
+        echo "No cached base report - scanning the base ref directly."
+        repo_dir="${GITHUB_WORKSPACE}/${EU_SCAN_PATH}"
+        # Explicit refspec: refs/remotes/origin/<base> must exist even under
+        # a narrow checkout fetch.
+        if ! git -C "${repo_dir}" fetch --depth=1 origin \
+            "+refs/heads/${EU_BASE_REF}:refs/remotes/origin/${EU_BASE_REF}"; then
+          echo "::warning::Could not fetch the base ref; ratchet degrades to observe for this run."
           exit 0
         fi
+        base_tree="${RUNNER_TEMP}/euthynos-base-tree"
+        git -C "${repo_dir}" worktree add --detach "${base_tree}" "origin/${EU_BASE_REF}"
+        cd "${EU_ACTION_PATH}/.."
+        npx tsx src/cli.ts scan "${base_tree}" --json "${base_json}" --months "${EU_MONTHS}" --quiet \
+          || echo "::warning::Base scan failed; ratchet degrades to observe for this run."
+        git -C "${repo_dir}" worktree remove --force "${base_tree}" || true
 
-        # Fetch the base branch tip. The explicit refspec guarantees
-        # refs/remotes/origin/<base> exists even when actions/checkout
-        # configured a narrow fetch refspec.
-        git -C "${repo_dir}" fetch --depth=1 origin \
-          "+refs/heads/${CH_BASE_REF}:refs/remotes/origin/${CH_BASE_REF}"
+    # -- Head scan ------------------------------------------------------------
+    - name: Scan the head
+      shell: bash
+      env:
+        EU_ACTION_PATH: ${{ github.action_path }}
+        EU_SCAN_PATH: ${{ inputs.path }}
+        EU_MONTHS: ${{ inputs.months }}
+      run: |
+        set -euo pipefail
+        cd "${EU_ACTION_PATH}/.."
+        npx tsx src/cli.ts scan "${GITHUB_WORKSPACE}/${EU_SCAN_PATH}" \
+          --json "${RUNNER_TEMP}/euthynos-head.json" \
+          --months "${EU_MONTHS}" \
+          --quiet
 
-        # Three-dot diff needs a merge base, which shallow clones often
-        # lack. Fall back to a two-dot tree diff: exact for the PR merge
-        # commit that actions/checkout checks out by default.
-        if ! changed_files=$(git -C "${repo_dir}" diff --name-only \
-            "origin/${CH_BASE_REF}...HEAD" 2>/dev/null); then
-          echo "No merge base in shallow history - using two-dot diff."
-          changed_files=$(git -C "${repo_dir}" diff --name-only \
-            "origin/${CH_BASE_REF}" HEAD)
-        fi
+    # -- Policy ---------------------------------------------------------------
+    - name: Evaluate the policy
+      id: policy
+      shell: bash
+      env:
+        EU_ACTION_PATH: ${{ github.action_path }}
+        EU_SCAN_PATH: ${{ inputs.path }}
+        EU_MODE: ${{ inputs.mode }}
+        EU_POLICY: ${{ inputs.policy }}
+      run: |
+        set -euo pipefail
+        head_json="${RUNNER_TEMP}/euthynos-head.json"
+        base_json="${RUNNER_TEMP}/euthynos-base.json"
+        out_json="${RUNNER_TEMP}/euthynos-policy.json"
 
-        if [ -z "${changed_files}" ]; then
-          modules_line="_(no changed files detected)_"
+        case "${EU_MODE}" in
+          observe) strict="";         scope="diff" ;;
+          ratchet) strict="--strict"; scope="diff" ;;
+          block)   strict="--strict"; scope="repo" ;;
+          *) echo "::error::mode must be observe, ratchet or block (got '${EU_MODE}')"; exit 2 ;;
+        esac
+
+        policy_file="${GITHUB_WORKSPACE}/${EU_SCAN_PATH}/${EU_POLICY}"
+        if [ -f "${policy_file}" ]; then
+          policy_args=(--policy "${policy_file}")
+          echo "Policy: ${EU_POLICY}"
         else
-          # Top-level directory of each changed path = module; bare
-          # root-level files map to "(root)", matching the CLI's naming.
-          modules_line=$(printf '%s\n' "${changed_files}" \
-            | awk -F/ 'NF > 1 { print $1 } NF == 1 { print "(root)" }' \
-            | sort -u \
-            | awk 'NR > 1 { printf ", " } { printf "`%s`", $0 } END { print "" }')
+          # Built-in ratchet policy; its rules may block only when the mode may.
+          policy_args=(--ratchet)
+          [ "${EU_MODE}" != "observe" ] && policy_args+=(--block)
+          echo "Policy: built-in ratchet (no ${EU_POLICY} in the repository)"
         fi
 
-        {
-          echo "### Modules touched in this PR"
-          echo
-          echo "${modules_line}"
-          echo
-          cat "${md_file}"
-        } > "${md_file}.tmp"
-        mv "${md_file}.tmp" "${md_file}"
+        base_args=()
+        if [ -s "${base_json}" ]; then base_args=(--base "${base_json}"); fi
 
-        echo "Modules touched: ${modules_line}"
+        cd "${EU_ACTION_PATH}/.."
+        set +e
+        npx tsx src/cli.ts policy \
+          --head "${head_json}" "${base_args[@]}" "${policy_args[@]}" \
+          --scope "${scope}" ${strict} \
+          --json "${out_json}" \
+          --md "${RUNNER_TEMP}/euthynos-policy.md" \
+          --sarif "${RUNNER_TEMP}/euthynos.sarif" \
+          --check-run "${RUNNER_TEMP}/euthynos-check-run.json"
+        code=$?
+        set -e
+        echo "exit-code=${code}" >> "${GITHUB_OUTPUT}"
+
+        conclusion="unknown"
+        if [ -s "${RUNNER_TEMP}/euthynos-check-run.json" ]; then
+          conclusion=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).conclusion)" "${RUNNER_TEMP}/euthynos-check-run.json")
+        fi
+        echo "conclusion=${conclusion}" >> "${GITHUB_OUTPUT}"
+        echo "Euthynos policy: exit ${code}, check-run conclusion ${conclusion}, mode ${EU_MODE}"
+        if [ "${code}" = "2" ]; then
+          echo "::error::Euthynos policy config error - see the policy output above."
+        fi
+        # Fail nothing here; the Enforce step decides, by mode.
+
+    # -- Save the default-branch report for future PR ratchets ----------------
+    - name: Save base report for PR ratchets
+      if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      shell: bash
+      run: cp "${RUNNER_TEMP}/euthynos-head.json" "${RUNNER_TEMP}/euthynos-base.json"
+
+    - name: Cache base report
+      if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/euthynos-base.json
+        key: euthynos-report-${{ github.ref_name }}-${{ github.sha }}
+
+    # -- Outputs --------------------------------------------------------------
+    - name: Upload decision artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: euthynos-policy
+        path: |
+          ${{ runner.temp }}/euthynos-policy.json
+          ${{ runner.temp }}/euthynos-policy.md
+          ${{ runner.temp }}/euthynos.sarif
+          ${{ runner.temp }}/euthynos-check-run.json
+        if-no-files-found: warn
+
+    - name: Upload SARIF to Code Scanning
+      if: inputs.sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      continue-on-error: true
+      with:
+        sarif_file: ${{ runner.temp }}/euthynos.sarif
+        category: euthynos
+
+    - name: Create the Check Run
+      if: inputs.check-run == 'true'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const p = process.env.RUNNER_TEMP + '/euthynos-check-run.json';
+          let payload;
+          try {
+            payload = JSON.parse(fs.readFileSync(p, 'utf8'));
+          } catch (err) {
+            core.warning('Euthynos check-run payload missing at ' + p + ': ' + err.message);
+            return;
+          }
+          // The PR's head commit, not the synthetic merge commit the runner
+          // checks out - a check on the merge commit is invisible on the PR.
+          const head_sha = (context.payload.pull_request && context.payload.pull_request.head.sha) || context.sha;
+          const output = { ...payload.output };
+          const LIMIT = 65000; // output.text hard limit is 65535
+          if (output.text && output.text.length > LIMIT) {
+            output.text = output.text.slice(0, LIMIT) + '\n\n_(truncated by Euthynos)_';
+          }
+          try {
+            const res = await github.rest.checks.create({
+              ...context.repo,
+              name: payload.name,
+              head_sha,
+              status: 'completed',
+              conclusion: payload.conclusion,
+              output,
+            });
+            core.info('Created check run ' + res.data.id + ' (' + payload.conclusion + ')');
+          } catch (err) {
+            // Fork PRs get a read-only GITHUB_TOKEN. Degrade to a warning; the
+            // Enforce step still applies the exit code to THIS job.
+            core.warning('Could not create the Check Run (read-only token on fork PRs?): ' + err.message);
+          }
 
     - name: Post sticky PR comment
       if: inputs.comment == 'true' && github.event_name == 'pull_request'
@@ -141,7 +316,7 @@ runs:
           // already posted on open PRs. Renaming it would orphan those and
           // post a duplicate alongside each one.
           const marker = '<!-- contexthub-report -->';
-          const reportPath = process.env.RUNNER_TEMP + '/contexthub.md';
+          const reportPath = process.env.RUNNER_TEMP + '/euthynos-policy.md';
 
           let report;
           try {
@@ -169,24 +344,31 @@ runs:
             });
             const existing = comments.find((c) => c.body && c.body.includes(marker));
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: existing.id,
-                body,
-              });
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
               core.info('Updated sticky Euthynos comment #' + existing.id);
             } else {
-              const created = await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
+              const created = await github.rest.issues.createComment({ owner, repo, issue_number, body });
               core.info('Created sticky Euthynos comment #' + created.data.id);
             }
           } catch (err) {
-            // Fork PRs get a read-only GITHUB_TOKEN. Observe, don't block:
-            // warn instead of failing the job.
             core.warning('Could not post Euthynos comment (read-only token on fork PRs?): ' + err.message);
           }
+
+    # -- Enforce, by mode -------------------------------------------------------
+    - name: Enforce
+      shell: bash
+      env:
+        EU_MODE: ${{ inputs.mode }}
+        EU_CODE: ${{ steps.policy.outputs.exit-code }}
+      run: |
+        set -euo pipefail
+        if [ "${EU_MODE}" = "observe" ]; then
+          echo "Observe mode: reported, not enforced (exit code was ${EU_CODE})."
+          exit 0
+        fi
+        case "${EU_CODE}" in
+          0) echo "Euthynos policy passed." ;;
+          1) echo "::error::Euthynos policy blocked this change (mode: ${EU_MODE})."; exit 1 ;;
+          2) echo "::error::Euthynos policy config error - fix the policy file."; exit 2 ;;
+          *) echo "::error::Euthynos policy did not produce a verdict (exit ${EU_CODE})."; exit 2 ;;
+        esac

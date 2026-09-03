@@ -47,8 +47,9 @@ describe('architecture policy engine', () => {
     const base = rep({ contamination: { score: 5, label: 'Minor', findings: [clone('a.ts', 'x', 'b.ts', 'x')], violations: 0, cloneFnIds: [] } });
     const head = rep({ contamination: { score: 12, label: 'Minor', findings: [clone('a.ts', 'x', 'b.ts', 'x'), clone('c.ts', 'y', 'd.ts', 'y')], violations: 0, cloneFnIds: [] } });
     const r = evaluatePolicy({ rules: [{ type: 'no-new-duplication', mode: 'block' }] }, head, base);
-    expect(r.violations).toHaveLength(1);
-    expect(r.violations[0]!.message).toContain('1 new duplicate');
+    expect(r.violations).toHaveLength(1); // one per NEW pair (c.ts/d.ts); the a.ts/b.ts pair exists in base
+    expect(r.violations[0]!.message).toContain('duplicate-logic pair');
+    expect(r.violations[0]!.message).toContain('c.ts:y ≈ d.ts:y');
   });
 
   it('enforces a metric floor per matched module glob', () => {

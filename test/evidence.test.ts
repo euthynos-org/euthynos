@@ -30,6 +30,10 @@ const emptyGraph = (over: Partial<ModuleGraph> = {}): ModuleGraph => ({
   usedExports: new Map(),
   deepImports: [],
   cycles: [],
+  fileImports: new Map(),
+  importEdges: [],
+  unresolvedImports: { count: 0, sample: [] },
+  externalImports: 0,
   ...over,
 });
 

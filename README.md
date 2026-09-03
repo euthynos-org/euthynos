@@ -256,6 +256,72 @@ broke, what was invalidated, what was re-measured, and what remains unsupported.
 statement about those is unverified from this repository, and we would rather say
 so than imply otherwise.
 
+## The CI gate
+
+The policy engine in this repository can stand between a pull request and
+`main` — from the free CLI, with no account. Add the Action:
+
+```yaml
+# .github/workflows/euthynos.yml
+name: Euthynos policy gate
+on:
+  pull_request:
+  push:
+    branches: [main]        # refreshes the base report the ratchet compares against
+permissions:
+  contents: read
+  pull-requests: write      # sticky comment
+  checks: write             # the Check Run — the one surface branch protection can require
+  security-events: write    # SARIF → Code Scanning
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: euthynos-org/euthynos/action@main
+        with:
+          mode: ratchet       # observe (default) · ratchet · block
+```
+
+Three modes, chosen so a team can turn the gate on at 9am and still be shipping
+at 10am:
+
+| mode | may fail the build on |
+|---|---|
+| `observe` (default) | nothing — it reports |
+| `ratchet` | violations **this PR introduced**; pre-existing debt is reported, never punished |
+| `block` | any block-mode violation, new or old |
+
+Rules live in the repository as code — `euthynos.policy.json` at the root,
+reviewed like anything else — and the CLI picks up the same file locally, so a
+verdict on your machine and the verdict in CI come from one source:
+
+```json
+{
+  "defaultMode": "warn",
+  "rules": [
+    { "id": "health-no-regression", "type": "health-delta", "maxDrop": 3, "mode": "block" },
+    { "id": "no-new-clones", "type": "no-new-duplication", "mode": "block" },
+    { "id": "ui-never-touches-db", "type": "forbidden-dependency",
+      "from": "ui/*", "to": "db", "allowedVia": "services", "mode": "block",
+      "message": "The UI reaches data through a service." }
+  ]
+}
+```
+
+Six rule types: `health-delta`, `contamination-delta`, `no-new-duplication`,
+`metric-floor`, `min-owners`, and `forbidden-dependency`. The last is
+*localized*: a violation names the exact import line and states the fix — a
+real route read off the import graph, never an invented one.
+
+What lands on the PR: a **Check Run** whose conclusion mirrors the CLI exit code
+exactly (`0` passed or observe · `1` blocked · `2` policy config error), **SARIF**
+in the Security tab with line-stable fingerprints, a sticky comment, and the
+decision JSON as an artifact. Every verdict states what it could *not* judge —
+unresolved imports, capped lists, files that failed to parse — rather than
+reading silence as a pass.
+
 ## Euthynos for Teams
 
 <br>
@@ -287,7 +353,8 @@ decision actually gets made.
 
 **◈ Merge policy, written as rules**
 
-Five rule types, each `warn` or `block`:
+The hosted form offers five rule types, each `warn` or `block` (the CLI and the
+Action also accept `forbidden-dependency` — see [The CI gate](#the-ci-gate)):
 
 | rule | threshold |
 |---|---|
@@ -381,8 +448,15 @@ euthynos scan [path]        architecture scan — six metrics, module table
 euthynos graph [path]       build the call graph; --impact/--callers/--path
 euthynos dashboard [path]   self-contained interactive HTML, zero runtime deps
 euthynos index [path]       inspect or rebuild the local index
+euthynos policy [path]      the gate: --policy <file> | --ratchet, --base <report.json>,
+                            --scope repo|diff, --strict, --json/--md/--sarif/--check-run
+euthynos alerts             health-regression diff between two stored scans
 euthynos mcp                start the MCP stdio server
 ```
+
+`euthynos policy` exits `0` (passed, or observe), `1` (blocked, only under
+`--strict`) or `2` (policy config error) — a contract CI can read, and one a
+config mistake can never disguise as a verdict.
 
 `euthynos --help` prints the full flag set and the build stamp.
 

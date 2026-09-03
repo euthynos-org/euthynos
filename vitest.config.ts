@@ -36,5 +36,30 @@ export default defineConfig({
         minForks: 1,
       },
     },
+
+    /*
+     * Never let a test's git spawn a filesystem-monitor daemon.
+     *
+     * Git for Windows can ship `core.fsmonitor = true` in the SYSTEM config.
+     * Every temp repository a test creates then auto-starts
+     * `git fsmonitor--daemon run --detach` on its first index-touching
+     * command — a DETACHED process that outlives the test, the repository
+     * and the worker. One long session accumulated 455 of them (~17 GB of
+     * commit charge), after which workers died with ERR_IPC_CHANNEL_CLOSED
+     * and V8 "committing semi space failed" — a memory crash that looked
+     * like a test-suite problem and was not.
+     *
+     * The engine's own runner (src/git/run.ts) already passes
+     * `-c core.fsmonitor=false`; the tests' direct `git init`/`git add`
+     * calls did not. This env is inherited by every child process a worker
+     * spawns, so it covers both. It is a targeted key override on purpose:
+     * GIT_CONFIG_NOSYSTEM would also drop system autocrlf, and
+     * diff-engine.test.ts depends on plain git still seeing that.
+     */
+    env: {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.fsmonitor',
+      GIT_CONFIG_VALUE_0: 'false',
+    },
   },
 });

@@ -414,6 +414,19 @@ function readImport(stmt: ts.ImportDeclaration, fromFile: string, line: number):
   const bindings = stmt.importClause?.namedBindings;
   if (bindings && ts.isNamedImports(bindings)) {
     for (const el of bindings.elements) named.push(el.name.text);
+    // Inline form: `import { type A, type B } from 'x'`. When EVERY named
+    // binding is type-only and there is no default binding, the whole
+    // statement is erased at compile time exactly like `import type` —
+    // it is not a runtime crossing and must not be judged as one. A mixed
+    // list (`{ type A, b }`) keeps a runtime binding and stays runtime.
+    // `import {} from 'x'` (no elements) is left to the statement-level flag.
+    if (
+      bindings.elements.length > 0 &&
+      !stmt.importClause?.name &&
+      bindings.elements.every((el) => el.isTypeOnly)
+    ) {
+      isTypeOnly = true;
+    }
   }
   if (stmt.importClause?.name) named.push(stmt.importClause.name.text);
   return { fromFile, line, specifier: spec, named, isTypeOnly };

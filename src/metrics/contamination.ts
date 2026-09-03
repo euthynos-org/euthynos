@@ -67,6 +67,8 @@ export function contamination(
   intraModuleTotal: number;
   violations: number;
   cloneFnIds: string[];
+  /** Uncapped identity of every finding — the set the policy gate diffs against. */
+  pairKeys: string[];
 } {
   const fns: FunctionRecord[] = [];
   const importsOfFile = new Map<string, Set<string>>();
@@ -293,6 +295,9 @@ export function contamination(
     intraModuleTotal: intraModule.length,
     violations,
     cloneFnIds: [...cloneIds],
+    // The full set, before the presentation cap: the policy gate diffs against
+    // this so a capped list never reads as "nothing else existed".
+    pairKeys: findings.map(pairKeyOf),
   };
 
   function push(
@@ -308,13 +313,20 @@ export function contamination(
     seenPair.add(key);
     candidates.push({
       kind,
-      a: { file: a.file, name: a.name, line: a.startLine, endLine: a.endLine },
-      b: { file: b.file, name: b.name, line: b.startLine, endLine: b.endLine },
+      // The DECLARATION line, as the intra-module branch and nearclone already
+      // record: a fixer lifting a duplicate needs the signature, not the body.
+      a: { file: a.file, name: a.name, line: a.declLine ?? a.startLine, endLine: a.endLine },
+      b: { file: b.file, name: b.name, line: b.declLine ?? b.startLine, endLine: b.endLine },
       confidence,
       signals,
       signalScores,
     });
   }
+}
+
+/** Order-independent identity of a finding; the policy engine builds the same key. */
+function pairKeyOf(f: ContaminationFinding): string {
+  return [`${f.a.file}:${f.a.name}`, `${f.b.file}:${f.b.name}`].sort().join('|');
 }
 
 /** Name similarity can add at most this fraction of the confidence scale. */

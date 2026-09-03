@@ -1322,7 +1322,17 @@ function checkMyChangesTool(args: Record<string, unknown>): ToolResult {
     );
   } else {
     lines.push(`Policy (default ratchet): ${verdict.violations.length} violation${verdict.violations.length === 1 ? '' : 's'}${verdict.blocked ? ' (BLOCK-mode among them)' : ''}:`);
-    verdict.violations.slice(0, 5).forEach((v) => lines.push(`  [${v.mode}] ${v.message}`));
+    // Localized rules now emit one row per finding, so the cap can bite: an
+    // elided row must be disclosed like every other list here, and the
+    // remedy — the part an agent acts on — must reach this surface.
+    const shown = verdict.violations.slice(0, 5);
+    for (const v of shown) {
+      lines.push(`  [${v.mode}] ${v.message}`);
+      if (v.remedy) lines.push(`      ↳ ${v.remedy.instruction}`);
+    }
+    if (verdict.violations.length > shown.length) {
+      lines.push(`  … ${verdict.violations.length - shown.length} more (euthynos policy --json lists every finding)`);
+    }
     lines.push('  (health-delta vs HEAD not evaluated by this tool — needs a full HEAD scan.)');
   }
 

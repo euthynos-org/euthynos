@@ -24,6 +24,9 @@ const emptyGraph = (): ModuleGraph => ({
   deepImports: [],
   cycles: [],
   fileImports: new Map(),
+  importEdges: [],
+  unresolvedImports: { count: 0, sample: [] },
+  externalImports: 0,
 });
 
 const mod = (name: string, files: ParsedFile[]): ModuleInfo => ({

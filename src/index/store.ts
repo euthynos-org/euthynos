@@ -42,6 +42,13 @@ import type { ParsedFile } from '../types.js';
 
 /**
  * Bump when the on-disk shape or the parse output changes meaning.
+ * v8: the TypeScript parser now marks an import whose named bindings are ALL
+ *   inline `type` (`import { type A, type B } from 'x'`) as `isTypeOnly` —
+ *   it is erased at compile time exactly like `import type`. `ImportRecord`
+ *   is persisted per file, so a v7 artifact would serve those imports as
+ *   runtime crossings and a `forbidden-dependency` rule could fire on an
+ *   import that does not exist at runtime — a WRONG verdict, until a rebuild.
+ *   The bump forces the rebuild.
  * v7: FunctionRecord gained `fieldRefs` (non-call member/field accesses, feeding
  *   find_references), and the Java parser now records enum constants as `const`
  *   symbols and field accesses. A v6 artifact carries neither, so a stale index
@@ -67,7 +74,7 @@ import type { ParsedFile } from '../types.js';
  * non-TS parsers gained symbols/callSites/totalLines — a v1 artifact would
  * make a Go repo look like it had no types.
  */
-export const INDEX_SCHEMA_VERSION = 7;
+export const INDEX_SCHEMA_VERSION = 8;
 
 export interface FileState {
   size: number;
